@@ -871,26 +871,9 @@ table.dg-sheet tbody tr:hover td:first-child{
   line-height: 1.05;
 }
 .dg-cal-day-index{
-  font-size: .68rem;
-  color: rgba(15,28,18,.56);
-  font-weight: 700;
-}
-.dg-cal-day-week{
-  font-size: .72rem;
-  font-weight: 800;
+  font-size: .75rem;
   color: rgba(11,93,30,.88);
-  margin-top: 2px;
-}
-.dg-cal-day-date{
-  font-size: .68rem;
-  color: rgba(15,28,18,.64);
-  margin-top: 2px;
-}
-.dg-sheet-calendar-weekend{
-  background: linear-gradient(180deg, rgba(201,162,39,.16), rgba(201,162,39,.08)) !important;
-}
-.dg-sheet-calendar-weekend-cell{
-  background: rgba(201,162,39,.06) !important;
+  font-weight: 800;
 }
 .dg-sheet-calendar tbody tr:nth-child(even) td{
   background: rgba(11,93,30,.015);
