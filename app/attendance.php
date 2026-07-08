@@ -63,7 +63,7 @@ function attendance_teacher_subject_maps(int $teacherUserId): array
  * @param array<string,bool>  $teacherSubjectNames lowercased names
  * @return list<array{subject_id:int,subject_code:string,subject_name:string}>
  */
-function attendance_subject_rows_for_sections(array $sectionNames, bool $isTeacher, bool $teacherHasSubjectMap, array $teacherSubjectCodes, array $teacherSubjectNames): array
+function attendance_subject_rows_for_sections(array $sectionNames, bool $isTeacher, bool $teacherHasSubjectMap, array $teacherSubjectCodes, array $teacherSubjectNames, ?string $gradeFilter = null): array
 {
     $trimmed = array_map(static function ($s) {
         return trim((string)$s);
@@ -75,6 +75,7 @@ function attendance_subject_rows_for_sections(array $sectionNames, bool $isTeach
         return [];
     }
     ensure_subjects_table();
+    subjects_sync_grade_level_for_sections($sectionNames, $gradeFilter);
     $ph = implode(",", array_fill(0, count($sectionNames), "?"));
     $stmt = db()->prepare(
         "SELECT DISTINCT sub.subject_id, sub.subject_code, sub.subject_name

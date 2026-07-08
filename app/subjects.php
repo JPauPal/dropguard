@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . "/db.php";
 require_once __DIR__ . "/sections.php";
+require_once __DIR__ . "/curriculum.php";
 
 function ensure_subjects_table(): void
 {
@@ -90,6 +91,11 @@ function add_subject(string $code, string $name, ?string $gradeLevel = null): vo
            is_active = 1"
     );
     $stmt->execute([$code, $name, $gradeLevel]);
+
+    $gradeLevel = trim((string)$gradeLevel);
+    if ($gradeLevel !== "" && curriculum_track_for_grade($gradeLevel) === "junior_high_school") {
+        subjects_sync_grade_to_matching_sections($gradeLevel);
+    }
 }
 
 function deactivate_subject(int $subjectId): void
@@ -99,10 +105,85 @@ function deactivate_subject(int $subjectId): void
     $stmt->execute([$subjectId]);
 }
 
-/** @return list<array> */
-function list_section_subjects(string $sectionName): array
+/** Link all active JHS subjects for a grade level to every matching section. */
+function subjects_sync_grade_to_matching_sections(string $gradeLevel): void
+{
+    $gradeLevel = section_grade_filter_normalize(trim($gradeLevel));
+    if ($gradeLevel === "" || curriculum_track_for_grade($gradeLevel) !== "junior_high_school") {
+        return;
+    }
+    foreach (list_section_names() as $sectionName) {
+        if (section_matches_grade_filter($sectionName, $gradeLevel)) {
+            subjects_sync_grade_level_for_section($sectionName, $gradeLevel);
+        }
+    }
+}
+
+/**
+ * Auto-link active subjects tagged for a JHS grade to one section (idempotent).
+ */
+function subjects_sync_grade_level_for_section(string $sectionName, ?string $gradeLevel = null): void
 {
     ensure_subjects_table();
+    $sectionName = trim($sectionName);
+    if ($sectionName === "") {
+        return;
+    }
+
+    $gradeLevel = trim((string)($gradeLevel ?? section_grade_level_for_name($sectionName) ?? ""));
+    $gradeLevel = section_grade_filter_normalize($gradeLevel);
+    if ($gradeLevel === "" || curriculum_track_for_grade($gradeLevel) !== "junior_high_school") {
+        return;
+    }
+
+    $stmt = db()->prepare("SELECT section_id FROM sections WHERE section_name = ? LIMIT 1");
+    $stmt->execute([$sectionName]);
+    $section = $stmt->fetch();
+    if (!$section) {
+        return;
+    }
+    $sectionId = (int)($section["section_id"] ?? 0);
+    if ($sectionId <= 0) {
+        return;
+    }
+
+    $stmtSub = db()->prepare(
+        "SELECT subject_id FROM subjects WHERE is_active = 1 AND grade_level = ?"
+    );
+    $stmtSub->execute([$gradeLevel]);
+    $ins = db()->prepare(
+        "INSERT IGNORE INTO section_subjects (section_id, subject_id) VALUES (?, ?)"
+    );
+    foreach ($stmtSub->fetchAll() as $row) {
+        $subjectId = (int)($row["subject_id"] ?? 0);
+        if ($subjectId > 0) {
+            $ins->execute([$sectionId, $subjectId]);
+        }
+    }
+}
+
+/** @param list<string> $sectionNames */
+function subjects_sync_grade_level_for_sections(array $sectionNames, ?string $gradeFilter = null): void
+{
+    $gradeFilter = section_grade_filter_normalize(trim((string)($gradeFilter ?? "")));
+    foreach ($sectionNames as $sectionName) {
+        $sectionName = trim((string)$sectionName);
+        if ($sectionName === "") {
+            continue;
+        }
+        if ($gradeFilter !== "" && !section_matches_grade_filter($sectionName, $gradeFilter)) {
+            continue;
+        }
+        $gradeLevel = $gradeFilter !== "" ? $gradeFilter : null;
+        subjects_sync_grade_level_for_section($sectionName, $gradeLevel);
+    }
+}
+
+/** @return list<array> */
+function list_section_subjects(string $sectionName, ?string $gradeLevel = null): array
+{
+    ensure_subjects_table();
+    subjects_sync_grade_level_for_section($sectionName, $gradeLevel);
     $stmt = db()->prepare(
         "SELECT sub.subject_id, sub.subject_code, sub.subject_name, sub.grade_level, sub.is_active
          FROM sections sec

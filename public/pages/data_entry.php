@@ -7,7 +7,7 @@ require_once __DIR__ . "/../../app/marks.php";
 require_once __DIR__ . "/../../app/batches.php";
 require_once __DIR__ . "/../../app/workflow.php";
 require_once __DIR__ . "/../../app/curriculum.php";
-require_once __DIR__ . "/../../app/sections.php";
+require_once __DIR__ . "/../../app/subjects.php";
 require_once __DIR__ . "/../../app/students.php";
 require_once __DIR__ . "/../../app/academic_period.php";
 
@@ -205,6 +205,10 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
             }
 
             attach_student_to_school_year($studentId, $schoolYear, $gradeLevel, $section !== "" ? $section : null, $strandNorm);
+
+            if ($section !== "") {
+                subjects_sync_grade_level_for_section($section, $gradeLevel);
+            }
 
             $pdo->commit();
             audit_log("student_data_save", "success", "student", $studentId, "Saved student data entry.", [

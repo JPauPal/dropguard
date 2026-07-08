@@ -191,6 +191,35 @@ if ($grade === "" || $sectionName === "") {
 } elseif ($termId !== "" && !sheet_term_allowed_for_grade($grade, $termId)) {
     $termId = "";
     $termMeta = null;
+} elseif ($termId === "") {
+    $autoTrack = sheet_grade_track_key($grade);
+    if ($autoTrack !== null && isset($allTerms[$autoTrack])) {
+        $fallbackTermId = "";
+        foreach ($allTerms[$autoTrack] as $t) {
+            $tid = (string)($t["term_id"] ?? "");
+            if ($tid === "" || !sheet_term_allowed_for_grade($grade, $tid)) {
+                continue;
+            }
+            if (!isset($closedTermsForYear[$tid])) {
+                $termId = $tid;
+                break;
+            }
+            if ($fallbackTermId === "") {
+                $fallbackTermId = $tid;
+            }
+        }
+        if ($termId === "" && $fallbackTermId !== "") {
+            $termId = $fallbackTermId;
+        }
+    }
+}
+if ($termId !== "") {
+    $termMeta = curriculum_term_meta($termId);
+    if ($schoolYear !== "") {
+        $attendanceDate = academic_period_resolve_term_start_date($schoolYear, $termId);
+    }
+    $termClosed = ($schoolYear !== "" && academic_period_is_term_closed($schoolYear, $termId));
+    $gradingReadOnly = $isCounselor || $termClosed;
 }
 $termSelectEnabled = ($grade !== "" && $sectionName !== "");
 $activeGradeTrack = sheet_grade_track_key($grade);
@@ -214,46 +243,28 @@ $studentIds = array_map(static fn($r) => (int)$r["student_id"], $students);
 $studentSubjectsById = [];
 $sectionsByStudentId = [];
 $attendanceSubjectOptionRows = [];
-if ($students) {
-    $sections = [];
-    foreach ($students as $s) {
-        $sid = (int)($s["student_id"] ?? 0);
-        $sec = trim((string)($s["section"] ?? ""));
-        if ($sid > 0) {
-            $sectionsByStudentId[$sid] = $sec;
-            if ($sec !== "") {
-                $sections[$sec] = true;
-            }
+$sections = [];
+foreach ($students as $s) {
+    $sid = (int)($s["student_id"] ?? 0);
+    $sec = trim((string)($s["section"] ?? ""));
+    if ($sid > 0) {
+        $sectionsByStudentId[$sid] = $sec;
+        if ($sec !== "") {
+            $sections[$sec] = true;
         }
     }
+}
+if ($sectionName !== "") {
+    $sections[$sectionName] = true;
+}
 
+if ($sections !== []) {
     $sectionSubjectsMap = [];
-    if ($sections) {
-        $sectionNamesForSubjects = array_keys($sections);
-        if ($grade !== "") {
-            $sectionNamesForSubjects = array_values(array_filter($sectionNamesForSubjects, static function ($sn) use ($grade) {
-                return section_matches_grade_filter($sn, $grade);
-            }));
+    foreach (array_keys($sections) as $secName) {
+        if ($grade !== "" && !section_matches_grade_filter($secName, $grade)) {
+            continue;
         }
-        if ($sectionNamesForSubjects !== []) {
-            $ph = implode(",", array_fill(0, count($sectionNamesForSubjects), "?"));
-            $stmtSecSub = db()->prepare(
-                "SELECT sec.section_name, sub.subject_code, sub.subject_name
-                 FROM sections sec
-                 INNER JOIN section_subjects ss ON ss.section_id = sec.section_id
-                 INNER JOIN subjects sub ON sub.subject_id = ss.subject_id
-                 WHERE sec.section_name IN ({$ph}) AND sub.is_active = 1
-                 ORDER BY sub.subject_code ASC"
-            );
-            $stmtSecSub->execute($sectionNamesForSubjects);
-            foreach ($stmtSecSub->fetchAll() as $row) {
-                $secName = trim((string)($row["section_name"] ?? ""));
-                if ($secName === "") {
-                    continue;
-                }
-                $sectionSubjectsMap[$secName][] = $row;
-            }
-        }
+        $sectionSubjectsMap[$secName] = list_section_subjects($secName, $grade !== "" ? $grade : null);
     }
 
     [$teacherSubjectCodes, $teacherSubjectNames, $teacherHasSubjectMap] = $isTeacher
@@ -265,7 +276,8 @@ if ($students) {
         $isTeacher,
         $teacherHasSubjectMap,
         $teacherSubjectCodes,
-        $teacherSubjectNames
+        $teacherSubjectNames,
+        $grade !== "" ? $grade : null
     );
 
     foreach ($students as $s) {
@@ -279,10 +291,7 @@ if ($students) {
         foreach ($items as $item) {
             $code = normalize_subject_code((string)($item["subject_code"] ?? ""));
             $nameLower = strtolower(trim((string)($item["subject_name"] ?? "")));
-            if ($isTeacher && !$teacherHasSubjectMap) {
-                continue;
-            }
-            if ($isTeacher) {
+            if ($isTeacher && $teacherHasSubjectMap) {
                 $matchesTeacher = ($code !== "" && isset($teacherSubjectCodes[$code])) || ($nameLower !== "" && isset($teacherSubjectNames[$nameLower]));
                 if (!$matchesTeacher) {
                     continue;
@@ -352,6 +361,16 @@ if ($grade === "" || $sectionName === "") {
     $students = [];
     $studentIds = [];
 }
+
+$canSaveAttendance = (
+    $view === "sheet"
+    && $grade !== ""
+    && $sectionName !== ""
+    && $termId !== ""
+    && $termMeta !== null
+    && $students !== []
+    && !$gradingReadOnly
+);
 
 $perfByStudent = [];
 if ($studentIds && $termId !== "") {
@@ -508,7 +527,7 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
             [$postTCodes, $postTNames, $postTHas] = $isTeacher
                 ? attendance_teacher_subject_maps((int)($user["user_id"] ?? 0))
                 : [[], [], false];
-            $postSubjectOptions = attendance_subject_rows_for_sections(array_keys($postSections), $isTeacher, $postTHas, $postTCodes, $postTNames);
+            $postSubjectOptions = attendance_subject_rows_for_sections(array_keys($postSections), $isTeacher, $postTHas, $postTCodes, $postTNames, $grade !== "" ? $grade : null);
             $saveAttendanceSubjectId = attendance_normalize_subject_id($postSaveSubjectRaw, $postSubjectOptions);
             if ($grade === "" || $sectionName === "") {
                 throw new RuntimeException("Please select Grade and Section.");
@@ -647,7 +666,8 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
             $isTeacher,
             $postTHas,
             $postTCodes,
-            $postTNames
+            $postTNames,
+            $grade !== "" ? $grade : null
         );
         $saveGradeSubjectId = attendance_normalize_subject_id($postSaveSubjectRaw, $postSubjectOptions);
         if ($saveGradeSubjectId <= 0) {
@@ -966,7 +986,7 @@ ob_start();
 
     <form id="dgStudentSheetsFilter" class="dg-sheet-filter" method="get" action="student-sheets">
       <input type="hidden" name="view" value="<?= htmlspecialchars($view, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
-      <div class="dg-sheet-filter-row">
+      <div class="dg-sheet-filter-row dg-sheet-filter-row--primary">
         <div class="dg-sheet-filter-field dg-sheet-filter-field--grade">
           <label class="form-label mb-1">Grade level</label>
           <select class="form-select" name="grade" id="dgSheetFilterGrade">
@@ -1033,7 +1053,7 @@ ob_start();
           </select>
         </div>
       </div>
-      <div class="dg-sheet-filter-row">
+      <div class="dg-sheet-filter-row dg-sheet-filter-row--secondary">
         <div class="dg-sheet-filter-field dg-sheet-filter-field--sy">
           <label class="form-label mb-1">School year</label>
           <?php
@@ -1114,6 +1134,24 @@ ob_start();
         opt.hidden = optTrack !== "" && optTrack !== track;
       }
     }
+    function pickDefaultTerm() {
+      if (!termEl || termEl.disabled || termEl.value) return;
+      const g = gEl.value || "";
+      const track = termTrackForGrade(g);
+      let fallback = "";
+      for (let i = 0; i < termEl.options.length; i++) {
+        const opt = termEl.options[i];
+        if (!opt.value || opt.hidden) continue;
+        const optTrack = opt.getAttribute("data-term-track") || "";
+        if (track && optTrack && optTrack !== track) continue;
+        if (!/\(Closed\)/.test(opt.textContent || "")) {
+          termEl.value = opt.value;
+          return;
+        }
+        if (!fallback) fallback = opt.value;
+      }
+      if (fallback) termEl.value = fallback;
+    }
     function syncTermOptions() {
       if (!termEl) return;
       const g = gEl.value || "";
@@ -1147,6 +1185,7 @@ ob_start();
       if (sel && (sel.hidden || (sel.value && track && sel.getAttribute("data-term-track") !== track))) {
         termEl.value = "";
       }
+      pickDefaultTerm();
     }
     function syncSectionPlaceholder() {
       const g = gEl.value || "";
@@ -1226,10 +1265,12 @@ ob_start();
   })();
 </script>
 
-<?php if ($grade === "" || $sectionName === "" || ($view === "grading" && $attendanceSubjectId <= 0)): ?>
+<?php if ($grade === "" || $sectionName === "" || $termId === "" || ($view === "grading" && $attendanceSubjectId <= 0)): ?>
   <div class="alert alert-secondary">
-    <?php if ($view === "grading" && $grade !== "" && $sectionName !== "" && $attendanceSubjectId <= 0): ?>
+    <?php if ($view === "grading" && $grade !== "" && $sectionName !== "" && $termId !== "" && $attendanceSubjectId <= 0): ?>
       Select a <strong>Subject</strong> for the grading sheet, then click <strong>Load</strong>.
+    <?php elseif ($grade !== "" && $sectionName !== "" && $termId === ""): ?>
+      Select a <strong>Grading period</strong> for this grade level, then click <strong>Load</strong> to show students and enable saving.
     <?php else: ?>
       Select <strong>Grade level</strong>, then <strong>Section</strong>, then <strong>Grading period</strong><?= $view === "sheet" ? "" : ", plus a <strong>Subject</strong>," ?> and click <strong>Load</strong> to show students.
     <?php endif; ?>
@@ -1314,34 +1355,37 @@ ob_start();
   <div class="card shadow-sm dg-calendar-panel dg-attendance-panel">
     <div class="card-body dg-calendar-panel-body">
       <form method="post" action="student-sheets" class="d-flex flex-column flex-grow-1 min-h-0">
-        <div class="dg-sheet-toolbar dg-att-toolbar mb-3 flex-shrink-0">
-          <div class="dg-sheet-toolbar-main">
-            <div class="dg-sheet-toolbar-heading">
-              <span class="dg-sheet-toolbar-badge dg-sheet-toolbar-badge--att" aria-hidden="true">AT</span>
-              <div>
-                <div class="dg-sheet-toolbar-title">Attendance Sheet</div>
-                <div class="dg-sheet-toolbar-subtitle"><?= (int)$termDays ?> school days · D1–D<?= (int)$termDays ?></div>
-              </div>
-            </div>
-            <div class="dg-sheet-meta-chips">
-              <span class="dg-sheet-chip"><?= htmlspecialchars($grade !== "" ? $grade : "All grades", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></span>
+        <div class="dg-calendar-toolbar flex-shrink-0">
+          <div class="dg-calendar-toolbar-main">
+            <div class="h5 mb-0">Attendance Sheet</div>
+            <div class="text-muted small dg-calendar-toolbar-meta">
+              <?= (int)$termDays ?> school days (D1–D<?= (int)$termDays ?>)
+              · <?= htmlspecialchars($grade !== "" ? $grade : "All", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>
               <?php if ($strandFilter !== "" && curriculum_strand_filter_applies($grade !== "" ? $grade : null)): ?>
-                <span class="dg-sheet-chip"><?= htmlspecialchars($strandFilter, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></span>
+                · <?= htmlspecialchars($strandFilter, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>
               <?php endif; ?>
-              <span class="dg-sheet-chip"><?= htmlspecialchars($sectionName !== "" ? section_display_short($sectionName) : "All sections", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></span>
+              · <?= htmlspecialchars($sectionName !== "" ? section_display_short($sectionName) : "All sections", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>
+              <?php if ($termId !== "" && $termMeta): ?>
+                · <?= htmlspecialchars(curriculum_term_label($termId), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>
+              <?php endif; ?>
               <?php if ($attSubLabel !== ""): ?>
-                <span class="dg-sheet-chip dg-sheet-chip--muted"><?= htmlspecialchars($attSubLabel, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></span>
+                · <?= htmlspecialchars($attSubLabel, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>
               <?php else: ?>
-                <span class="dg-sheet-chip dg-sheet-chip--muted">General (whole day)</span>
+                · <span class="text-muted">General (whole day)</span>
               <?php endif; ?>
             </div>
           </div>
-          <div class="dg-sheet-toolbar-actions">
+          <div class="dg-calendar-toolbar-actions">
             <div class="btn-group btn-group-sm dg-sheet-scroll-btns" role="group" aria-label="Sheet horizontal scroll controls">
-              <button type="button" class="btn btn-outline-secondary" id="dgCalScrollLeft" title="Slide left" aria-label="Slide left">←</button>
-              <button type="button" class="btn btn-outline-secondary" id="dgCalScrollRight" title="Slide right" aria-label="Slide right">→</button>
+              <button type="button" class="btn btn-outline-secondary" id="dgCalScrollLeft" title="Slide left">←</button>
+              <button type="button" class="btn btn-outline-secondary" id="dgCalScrollRight" title="Slide right">→</button>
             </div>
-            <button class="btn btn-primary btn-sm" type="submit" <?= ($termId === "" || $gradingReadOnly) ? "disabled" : "" ?>>Save Attendance</button>
+            <?php if ($termId === "" && !$gradingReadOnly): ?>
+              <span class="text-warning small dg-calendar-save-hint">Select grading period to save</span>
+            <?php elseif ($gradingReadOnly && !$isCounselor): ?>
+              <span class="text-muted small dg-calendar-save-hint">Period closed — read only</span>
+            <?php endif; ?>
+            <button class="btn btn-primary btn-sm" type="submit" id="dgAttSaveBtn" <?= $canSaveAttendance ? "" : "disabled" ?> title="<?= $canSaveAttendance ? "Save attendance for this grading period" : ($termId === "" ? "Select a grading period first" : ($gradingReadOnly ? "This grading period is read-only" : "Load students to save")) ?>">Save Attendance</button>
           </div>
         </div>
             <?= csrf_field() ?>
@@ -1356,18 +1400,13 @@ ob_start();
             <div class="dg-sheet-wrap dg-sheet-wrap-calendar" id="dgCalendarScrollArea">
               <table class="dg-sheet dg-sheet-calendar">
                 <thead>
-                  <tr class="dg-sheet-col-groups">
-                    <th colspan="1"></th>
-                    <th class="dg-sheet-col-group dg-sheet-col-group--days" colspan="<?= count($calendarDayMeta) ?>">School days</th>
-                    <th class="dg-sheet-col-group dg-sheet-col-group--summary" colspan="3">Term totals</th>
-                  </tr>
                   <tr>
-                    <th class="dg-sheet-sticky-col" style="min-width:240px">
+                    <th style="min-width:240px">
                       <div class="fw-semibold">Student</div>
-                      <div class="text-muted small">Tap P, L, or A per day</div>
+                      <div class="text-muted small">Mark Present, Late, or Absent per school day</div>
                     </th>
                     <?php foreach ($calendarDayMeta as $meta): ?>
-                      <th class="dg-sheet-day dg-sheet-calendar-day<?= ((int)$meta["idx"] % 5 === 0) ? " dg-sheet-day-marker" : "" ?>">
+                      <th class="dg-sheet-day dg-sheet-calendar-day">
                         <div class="dg-cal-day-index">D<?= (int)$meta["idx"] ?></div>
                       </th>
                     <?php endforeach; ?>
@@ -1410,19 +1449,13 @@ ob_start();
                             <?php foreach ($calendarDayMeta as $meta): ?>
                               <?php $d = (string)$meta["date"]; ?>
                               <?php $st = $attByDateStudent[$d][$sid] ?? ""; ?>
-                              <td class="dg-sheet-day dg-att-cell">
-                                <select class="dg-att-status dg-att-status-native" name="days[<?= htmlspecialchars($d, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>][<?= $sid ?>]" tabindex="-1" aria-hidden="true">
+                              <td class="dg-sheet-day">
+                                <select class="form-select form-select-sm dg-att-status" name="days[<?= htmlspecialchars($d, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>][<?= $sid ?>]"<?= $gradingReadOnly ? " disabled" : "" ?> aria-label="Day <?= (int)$meta["idx"] ?> attendance for <?= htmlspecialchars((string)$s["name"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>">
                                   <option value="" <?= $st === "" ? "selected" : "" ?>>—</option>
                                   <option value="Present" <?= $st === "Present" ? "selected" : "" ?>>P</option>
                                   <option value="Late" <?= $st === "Late" ? "selected" : "" ?>>L</option>
                                   <option value="Absent" <?= $st === "Absent" ? "selected" : "" ?>>A</option>
                                 </select>
-                                <div class="dg-att-pills" role="group" aria-label="Day <?= (int)$meta["idx"] ?> attendance">
-                                  <button type="button" class="dg-att-pill dg-att-pill--blank<?= $st === "" ? " active" : "" ?>" data-value="" title="Not set"<?= $gradingReadOnly ? " disabled" : "" ?>>—</button>
-                                  <button type="button" class="dg-att-pill dg-att-pill--present<?= $st === "Present" ? " active" : "" ?>" data-value="Present" title="Present"<?= $gradingReadOnly ? " disabled" : "" ?>>P</button>
-                                  <button type="button" class="dg-att-pill dg-att-pill--late<?= $st === "Late" ? " active" : "" ?>" data-value="Late" title="Late"<?= $gradingReadOnly ? " disabled" : "" ?>>L</button>
-                                  <button type="button" class="dg-att-pill dg-att-pill--absent<?= $st === "Absent" ? " active" : "" ?>" data-value="Absent" title="Absent"<?= $gradingReadOnly ? " disabled" : "" ?>>A</button>
-                                </div>
                               </td>
                             <?php endforeach; ?>
                             <td class="text-end small dg-sheet-summary-col dg-sheet-summary-val"><?= (int)$attStats["days_present"] ?></td>
@@ -1439,38 +1472,20 @@ ob_start();
               </table>
             </div>
 
-            <div class="dg-sheet-legend mt-3">
-              <div class="dg-sheet-legend-items">
-                <span class="dg-sheet-legend-label">Legend</span>
-                <span class="dg-att-pill dg-att-pill--present active dg-sheet-legend-pill" aria-hidden="true">P</span><span>Present</span>
-                <span class="dg-att-pill dg-att-pill--late active dg-sheet-legend-pill" aria-hidden="true">L</span><span>Late</span>
-                <span class="dg-att-pill dg-att-pill--absent active dg-sheet-legend-pill" aria-hidden="true">A</span><span>Absent</span>
-                <span class="dg-att-pill dg-att-pill--blank active dg-sheet-legend-pill" aria-hidden="true">—</span><span>Not set</span>
-              </div>
-              <div class="dg-sheet-legend-note text-muted small">
-                Rows are grouped by Junior High and Senior High. Scroll horizontally with the arrows or mouse wheel over the sheet.
-                <?php if ($attendanceSubjectId > 0): ?>
-                  Present + Late count as present. Blank days count as absent for term totals.
-                <?php endif; ?>
-              </div>
+            <div class="text-muted small mt-2 d-flex flex-wrap gap-3">
+              <span><strong>Legend:</strong> P = Present, L = Late, A = Absent, — = not set.</span>
+              <span>Rows are grouped by Junior High and Senior High.</span>
+              <span>Use mouse wheel over the sheet to scroll horizontally.</span>
+              <?php if ($attendanceSubjectId > 0): ?>
+                <span>Present + Late count as present. Blank days count as absent for term totals.</span>
+              <?php endif; ?>
             </div>
       </form>
     </div>
   </div>
 <?php else: ?>
 <?php if ($view === "grading"): ?>
-<?php
-  $gradeSubLabel = "";
-  if ($attendanceSubjectId > 0) {
-      foreach ($attendanceSubjectOptionRows as $ar) {
-          if ((int)$ar["subject_id"] === $attendanceSubjectId) {
-              $gradeSubLabel = attendance_subject_label(["subject_code" => $ar["subject_code"], "subject_name" => $ar["subject_name"]]);
-              break;
-          }
-      }
-  }
-?>
-<div class="card shadow-sm dg-sheet-data-card dg-grading-panel h-100">
+<div class="card shadow-sm dg-sheet-data-card h-100">
   <div class="card-body d-flex flex-column min-h-0">
     <form method="post" action="student-sheets" class="d-flex flex-column flex-grow-1 min-h-0">
       <?= csrf_field() ?>
@@ -1482,66 +1497,47 @@ ob_start();
       <input type="hidden" name="school_year" value="<?= htmlspecialchars($schoolYear, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
       <input type="hidden" name="attendance_subject_id" value="<?= (int)$attendanceSubjectId ?>" />
 
-      <div class="dg-sheet-toolbar dg-grade-toolbar mb-3 flex-shrink-0">
-        <div class="dg-sheet-toolbar-main">
-          <div class="dg-sheet-toolbar-heading">
-            <span class="dg-sheet-toolbar-badge dg-sheet-toolbar-badge--grade" aria-hidden="true">GR</span>
-            <div>
-              <div class="dg-sheet-toolbar-title">Grading Sheet</div>
-              <div class="dg-sheet-toolbar-subtitle"><?= count($students) ?> student<?= count($students) === 1 ? "" : "s" ?><?php if ($termId !== "" && $termMeta): ?> · <?= htmlspecialchars(curriculum_term_label($termId), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?><?php endif; ?></div>
-            </div>
-          </div>
-          <div class="dg-sheet-meta-chips">
-            <span class="dg-sheet-chip"><?= htmlspecialchars($grade !== "" ? $grade : "All grades", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></span>
-            <span class="dg-sheet-chip"><?= htmlspecialchars($sectionName !== "" ? section_display_short($sectionName) : "All sections", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></span>
-            <?php if ($gradeSubLabel !== ""): ?>
-              <span class="dg-sheet-chip dg-sheet-chip--muted"><?= htmlspecialchars($gradeSubLabel, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></span>
-            <?php endif; ?>
-          </div>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2 flex-shrink-0">
+        <div class="fw-semibold">
+          Grading Sheet (<?= count($students) ?>)
+          <?php if ($termId !== "" && $termMeta): ?>
+            <span class="text-muted small ms-2">· <?= htmlspecialchars(curriculum_term_label($termId), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></span>
+          <?php endif; ?>
         </div>
-        <div class="dg-sheet-toolbar-actions dg-grade-toolbar-actions">
-          <div class="dg-grade-weights-panel">
-            <span class="dg-grade-weights-label">Weights</span>
-            <div class="dg-grade-weights-inputs input-group input-group-sm">
-              <span class="input-group-text">Quiz</span>
-              <input class="form-control text-end" type="number" step="1" min="0" max="100" name="w_quiz" value="<?= htmlspecialchars((string)$weights["quiz"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
-              <span class="input-group-text">Exam</span>
-              <input class="form-control text-end" type="number" step="1" min="0" max="100" name="w_exam" value="<?= htmlspecialchars((string)$weights["exam"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
-              <span class="input-group-text">Project</span>
-              <input class="form-control text-end" type="number" step="1" min="0" max="100" name="w_project" value="<?= htmlspecialchars((string)$weights["project"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
-            </div>
-            <div class="dg-grade-weights-total small" id="dgWeightTotalWrap">
-              Total <span class="fw-semibold" id="dgWeightTotal">100</span>
-            </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          <div class="text-muted small d-none d-md-block">Weights:</div>
+          <div class="input-group input-group-sm dg-grade-weights-inputs">
+            <span class="input-group-text">Quiz</span>
+            <input class="form-control text-end" type="number" step="1" min="0" max="100" name="w_quiz" value="<?= htmlspecialchars((string)$weights["quiz"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
+            <span class="input-group-text">Exam</span>
+            <input class="form-control text-end" type="number" step="1" min="0" max="100" name="w_exam" value="<?= htmlspecialchars((string)$weights["exam"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
+            <span class="input-group-text">Project</span>
+            <input class="form-control text-end" type="number" step="1" min="0" max="100" name="w_project" value="<?= htmlspecialchars((string)$weights["project"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
           </div>
-          <button class="btn btn-primary btn-sm" id="dgGradeSaveBtn" type="submit"<?= ($termId === "" || $gradingReadOnly) ? ' disabled data-locked="1"' : "" ?>>Save Grades</button>
+          <div class="small text-muted" id="dgWeightTotalWrap">
+            Total: <span class="fw-semibold" id="dgWeightTotal">100</span>
+          </div>
+          <button class="btn btn-primary btn-sm" id="dgGradeSaveBtn" type="submit"<?= ($termId === "" || $gradingReadOnly) ? ' disabled data-locked="1"' : "" ?>>Save</button>
           <button class="btn btn-outline-dark btn-sm" id="dgGradeFinalizeBtn" type="submit" name="finalize" value="1"<?= ($termId === "" || $gradingReadOnly) ? ' disabled data-locked="1"' : "" ?> onclick="return confirm('Finalize grades for this term? This will lock scores until an admin reopens the period.');">Finalize</button>
         </div>
       </div>
 
-      <div class="dg-sheet-wrap dg-sheet-wrap-grading dg-flex-1">
-        <table class="dg-sheet dg-sheet-grading">
+      <div class="dg-sheet-wrap dg-flex-1">
+        <table class="dg-sheet">
           <thead>
-            <tr class="dg-sheet-col-groups">
-              <th colspan="2" class="dg-sheet-col-group dg-sheet-col-group--student">Student</th>
-              <th colspan="4" class="dg-sheet-col-group dg-sheet-col-group--scores">Component scores</th>
-              <th colspan="1" class="dg-sheet-col-group dg-sheet-col-group--academic">Academic</th>
-              <th colspan="4" class="dg-sheet-col-group dg-sheet-col-group--att">Attendance</th>
-              <th colspan="2" class="dg-sheet-col-group dg-sheet-col-group--result">Result</th>
-            </tr>
             <tr>
-              <th class="dg-sheet-sticky-col">Name</th>
+              <th>Student</th>
               <th>Grade</th>
-              <th class="text-end dg-grade-input-col">Quiz</th>
-              <th class="text-end dg-grade-input-col">Exam</th>
-              <th class="text-end dg-grade-input-col">Project</th>
-              <th class="text-end dg-grade-input-col">Extra</th>
-              <th class="text-end dg-grade-score-col">Academic</th>
-              <th class="text-end dg-grade-att-col">Present</th>
-              <th class="text-end dg-grade-att-col">Total</th>
-              <th class="text-end dg-grade-att-col">Abs.</th>
-              <th class="text-end dg-grade-att-col">Att %</th>
-              <th class="text-end dg-grade-final-col">Final Score</th>
+              <th class="text-end">Quiz</th>
+              <th class="text-end">Exam</th>
+              <th class="text-end">Project</th>
+              <th class="text-end">Extra</th>
+              <th class="text-end">Academic</th>
+              <th class="text-end">Present</th>
+              <th class="text-end">Total</th>
+              <th class="text-end">Abs.</th>
+              <th class="text-end">Att %</th>
+              <th class="text-end">Finalized Score</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -1563,36 +1559,36 @@ ob_start();
                 $isFailing = $rowScores["is_failing"];
                 $attStats = attendance_display_stats($p, $attSummaryByStudent[$sid] ?? null);
               ?>
-              <tr data-row="grade" data-student-id="<?= $sid ?>" <?= $isFinal ? 'data-final="1"' : '' ?> class="<?= $isFinal ? "dg-grade-row-final" : "" ?>">
-                <td class="dg-sheet-sticky-col dg-grade-student-cell">
+              <tr data-row="grade" data-student-id="<?= $sid ?>" <?= $isFinal ? 'data-final="1"' : '' ?>>
+                <td>
                   <div class="fw-semibold"><?= htmlspecialchars((string)$s["name"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
                   <div class="text-muted small"><?= htmlspecialchars((string)($s["lrn"] ?? ""), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
                 </td>
                 <td class="text-muted small"><?= htmlspecialchars((string)$s["grade_level"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></td>
-                <td class="text-end dg-grade-input-col">
+                <td class="text-end">
                   <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-quiz" type="number" step="0.01" min="0" max="100" name="rows[<?= $sid ?>][quiz]" value="<?= htmlspecialchars((string)$quiz, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
                 </td>
-                <td class="text-end dg-grade-input-col">
+                <td class="text-end">
                   <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-exam" type="number" step="0.01" min="0" max="100" name="rows[<?= $sid ?>][exam]" value="<?= htmlspecialchars((string)$exam, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
                 </td>
-                <td class="text-end dg-grade-input-col">
+                <td class="text-end">
                   <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-project" type="number" step="0.01" min="0" max="100" name="rows[<?= $sid ?>][project]" value="<?= htmlspecialchars((string)$project, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
                 </td>
-                <td class="text-end dg-grade-input-col">
+                <td class="text-end">
                   <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-extra" type="number" step="1" min="0" max="<?= (int)$extracurricularMax ?>" name="rows[<?= $sid ?>][extracurricular_score]" value="<?= (int)$extra ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
-                  <div class="text-muted small dg-grade-extra-hint">Max <?= (int)$extracurricularMax ?></div>
+                  <div class="text-muted small">Max <?= (int)$extracurricularMax ?></div>
                 </td>
-                <td class="text-end dg-grade-score-col">
-                  <span class="dg-grade-score-pill dg-grade-academic"><?= (int)$academicScore ?></span>
+                <td class="text-end">
+                  <span class="fw-semibold dg-grade-academic"><?= (int)$academicScore ?></span>
                 </td>
-                <td class="text-end small dg-grade-att-col"><?= (int)$attStats["days_present"] ?></td>
-                <td class="text-end small dg-grade-att-col"><?= (int)$attStats["total_school_days"] ?></td>
-                <td class="text-end small dg-grade-att-col"><?= (int)$attStats["absences"] ?></td>
-                <td class="text-end small dg-grade-att-col"><?= $attStats["attendance_pct"] !== null ? number_format((float)$attStats["attendance_pct"], 1) . "%" : "—" ?></td>
-                <td class="text-end dg-grade-final-col">
-                  <span class="dg-grade-score-pill dg-grade-final"><?= (int)$gpa ?></span>
+                <td class="text-end small"><?= (int)$attStats["days_present"] ?></td>
+                <td class="text-end small"><?= (int)$attStats["total_school_days"] ?></td>
+                <td class="text-end small"><?= (int)$attStats["absences"] ?></td>
+                <td class="text-end small"><?= $attStats["attendance_pct"] !== null ? number_format((float)$attStats["attendance_pct"], 1) . "%" : "—" ?></td>
+                <td class="text-end">
+                  <span class="fw-semibold dg-grade-final"><?= (int)$gpa ?></span>
                   <?php if ($isFinal): ?>
-                    <span class="badge dg-grade-final-badge ms-1">Final</span>
+                    <span class="badge text-bg-secondary ms-1">Final</span>
                   <?php endif; ?>
                   <div class="text-muted small">IG <span class="dg-grade-ig"><?= (int)$initial ?></span></div>
                 </td>
@@ -1726,33 +1722,19 @@ ob_start();
       }, { passive: false });
     }
 
-    // Attendance pill controls (sync hidden select for form submit).
-    function syncAttCell(cell) {
-      if (!cell) return;
-      const select = cell.querySelector('select.dg-att-status-native');
-      if (!select) return;
-      const value = String(select.value || '');
-      cell.querySelectorAll('.dg-att-pill').forEach((btn) => {
-        const active = (btn.getAttribute('data-value') || '') === value;
-        btn.classList.toggle('active', active);
-      });
-      cell.classList.remove('dg-att-cell-present', 'dg-att-cell-late', 'dg-att-cell-absent', 'dg-att-cell-blank');
-      if (value === 'Present') cell.classList.add('dg-att-cell-present');
-      else if (value === 'Late') cell.classList.add('dg-att-cell-late');
-      else if (value === 'Absent') cell.classList.add('dg-att-cell-absent');
-      else cell.classList.add('dg-att-cell-blank');
+    // Attendance status colors on dropdown (P=green, L=yellow, A=red).
+    function syncAttSelect(el) {
+      if (!el) return;
+      el.classList.remove('dg-att-present', 'dg-att-late', 'dg-att-absent', 'dg-att-blank');
+      const v = String(el.value || '');
+      if (v === 'Present') el.classList.add('dg-att-present');
+      else if (v === 'Late') el.classList.add('dg-att-late');
+      else if (v === 'Absent') el.classList.add('dg-att-absent');
+      else el.classList.add('dg-att-blank');
     }
-    document.querySelectorAll('.dg-att-cell').forEach((cell) => {
-      const select = cell.querySelector('select.dg-att-status-native');
-      if (!select) return;
-      syncAttCell(cell);
-      cell.querySelectorAll('.dg-att-pill').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          if (btn.disabled) return;
-          select.value = btn.getAttribute('data-value') || '';
-          syncAttCell(cell);
-        });
-      });
+    document.querySelectorAll('select.dg-att-status').forEach((el) => {
+      syncAttSelect(el);
+      el.addEventListener('change', () => syncAttSelect(el));
     });
   })();
 </script>
