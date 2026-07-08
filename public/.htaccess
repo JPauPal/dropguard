@@ -1,0 +1,15 @@
+Options -Indexes
+
+RewriteEngine On
+# Omit RewriteBase so Apache derives it from the folder (works for XAMPP subfolder and Hostinger doc root).
+
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+RewriteRule ^ index.php [L]
+
+# Block hidden files (.env, .git, etc.) if they ever land under public/
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>

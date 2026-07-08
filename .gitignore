@@ -1,0 +1,44 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs and temp
+*.log
+*.tmp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+app/config.local.php
+firebase-service-account*.json
+serviceAccountKey*.json
+*secret*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Node/Firebase tooling
+node_modules/
+.firebase/
+firebase-debug.log
+.firebaserc.local
+
+# Build/cache artifacts
+dist/
+build/
+coverage/
+
+# App runtime storage (keep folder + .htaccess)
+storage/sessions/*
+!storage/sessions/.htaccess

@@ -1,0 +1,12 @@
+{
+  "track_key": "junior_high_school",
+  "display_name": "Junior High School",
+  "levels": ["Grade 7", "Grade 8", "Grade 9", "Grade 10"],
+  "primary_term_type": "Quarterly",
+  "grading_periods": [
+    { "term_id": "JHS_Q1", "name": "1st Quarter", "term_sort": 1 },
+    { "term_id": "JHS_Q2", "name": "2nd Quarter", "term_sort": 2 },
+    { "term_id": "JHS_Q3", "name": "3rd Quarter", "term_sort": 3 },
+    { "term_id": "JHS_Q4", "name": "4th Quarter", "term_sort": 4 }
+  ]
+}

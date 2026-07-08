@@ -1,0 +1,52 @@
+{
+  "track_key": "senior_high_school",
+  "display_name": "Senior High School",
+  "levels": ["Grade 11", "Grade 12"],
+  "primary_term_type": "Semestral",
+  "curriculum_programs": [
+    {
+      "program_key": "legacy",
+      "display_name": "Legacy SHS (Strands)",
+      "strands": [
+        { "code": "STEM", "label": "STEM" },
+        { "code": "ABM", "label": "ABM" },
+        { "code": "HUMSS", "label": "HUMSS" },
+        { "code": "TVL", "label": "TVL" }
+      ]
+    },
+    {
+      "program_key": "strengthened",
+      "display_name": "Strengthened SHS (SSHS)",
+      "strands": [
+        { "code": "Education", "label": "Education (Academic)" },
+        { "code": "TechVoc", "label": "TechVoc (Technical-Professional)" }
+      ]
+    }
+  ],
+  "strand_aliases": {
+    "TECHVOC": "TechVoc",
+    "TECH-VOC": "TechVoc",
+    "TECH VOC": "TechVoc",
+    "TECHPRO": "TechVoc",
+    "TECH PRO": "TechVoc",
+    "EDUCATION": "Education"
+  },
+  "semesters": [
+    {
+      "term_id": "SHS_SEM1",
+      "name": "1st Semester",
+      "grading_periods": [
+        { "term_id": "SHS_S1_Q1", "name": "1st Quarter", "term_sort": 1 },
+        { "term_id": "SHS_S1_Q2", "name": "2nd Quarter", "term_sort": 2 }
+      ]
+    },
+    {
+      "term_id": "SHS_SEM2",
+      "name": "2nd Semester",
+      "grading_periods": [
+        { "term_id": "SHS_S2_Q3", "name": "3rd Quarter", "term_sort": 3 },
+        { "term_id": "SHS_S2_Q4", "name": "4th Quarter", "term_sort": 4 }
+      ]
+    }
+  ]
+}

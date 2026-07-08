@@ -1,0 +1,11 @@
+# Fallback when the hosting account document root is the project folder (not recommended).
+# Preferred: set document root to public/ in Hostinger hPanel.
+
+Options -Indexes
+RewriteEngine On
+
+RewriteRule ^$ public/ [L]
+RewriteRule ^((?!public/).*)$ public/$1 [L]
+
+# Block direct web access to application internals.
+RedirectMatch 403 ^/(app|sql|ml|storage|tools|Documents)(/|$)
