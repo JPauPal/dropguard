@@ -410,8 +410,8 @@ $defaultSchoolYear = academic_period_active_school_year();
           <table class="table table-sm align-middle dg-table">
             <thead>
               <tr>
-                <th style="width:38px">
-                  <input class="form-check-input" type="checkbox" id="dgSelectAllStudents" />
+                <th style="width:44px" class="text-center" title="Select students to add to your class">
+                  <input class="form-check-input" type="checkbox" id="dgSelectAllStudents" aria-label="Select all students" />
                 </th>
                 <th><?= h_t("data_entry.th_id") ?></th>
                 <th><?= h_t("data_entry.th_lrn") ?></th>
@@ -429,8 +429,8 @@ $defaultSchoolYear = academic_period_active_school_year();
             <tbody id="studentTableBody">
               <?php foreach ($rows as $r): ?>
                 <tr>
-                  <td>
-                    <input class="form-check-input dg-student-pick" type="checkbox" form="dgImportStudentsForm" name="student_ids[]" value="<?= (int)$r["student_id"] ?>" />
+                  <td class="text-center">
+                    <input class="form-check-input dg-student-pick" type="checkbox" form="dgImportStudentsForm" name="student_ids[]" value="<?= (int)$r["student_id"] ?>" aria-label="Select <?= htmlspecialchars((string)$r["name"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
                   </td>
                   <td><?= (int)$r["student_id"] ?></td>
                   <td class="text-muted small"><?= htmlspecialchars((string)($r["lrn"] ?? ""), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></td>

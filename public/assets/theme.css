@@ -522,6 +522,35 @@ a{ text-underline-offset: 2px; }
 .table.dg-table tbody tr:nth-child(even):hover{
   background: rgba(13,107,36,.05) !important;
 }
+
+/* Row-selection checkboxes — visible on light table rows */
+.table.dg-table .form-check-input{
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-top: 0;
+  border: 2px solid var(--dg-green-2);
+  border-radius: 4px;
+  background-color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.table.dg-table .form-check-input:hover{
+  border-color: var(--dg-green);
+  background-color: rgba(13,107,36,.08);
+}
+.table.dg-table .form-check-input:checked{
+  background-color: var(--dg-green-2);
+  border-color: var(--dg-green-2);
+}
+.table.dg-table .form-check-input:focus{
+  border-color: var(--dg-green-light);
+  box-shadow: 0 0 0 .2rem var(--dg-focus);
+}
+.table.dg-table .form-check-input:indeterminate{
+  background-color: var(--dg-green-2);
+  border-color: var(--dg-green-2);
+}
+
 .table-responsive{
   border-radius: var(--dg-radius);
   border: 1px solid var(--dg-border);
