@@ -105,6 +105,87 @@ function deactivate_subject(int $subjectId): void
     $stmt->execute([$subjectId]);
 }
 
+function get_subject_row(int $subjectId): ?array
+{
+    ensure_subjects_table();
+    if ($subjectId <= 0) {
+        return null;
+    }
+    $stmt = db()->prepare(
+        "SELECT subject_id, subject_code, subject_name, grade_level, is_active
+         FROM subjects WHERE subject_id = ? LIMIT 1"
+    );
+    $stmt->execute([$subjectId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+/** @return list<string> Human-readable reasons that block permanent deletion. */
+function subject_delete_blockers(int $subjectId): array
+{
+    ensure_subjects_table();
+    if ($subjectId <= 0 || !get_subject_row($subjectId)) {
+        return ["Subject not found."];
+    }
+
+    $blockers = [];
+
+    try {
+        $stmt = db()->prepare("SELECT COUNT(*) AS c FROM grading_components WHERE subject_id = ?");
+        $stmt->execute([$subjectId]);
+        $count = (int)($stmt->fetch()["c"] ?? 0);
+        if ($count > 0) {
+            $blockers[] = "{$count} grading record" . ($count === 1 ? "" : "s");
+        }
+    } catch (Throwable) {
+        // grading_components may not exist on very old installs
+    }
+
+    try {
+        $stmt = db()->prepare("SELECT COUNT(*) AS c FROM daily_attendance WHERE subject_id = ?");
+        $stmt->execute([$subjectId]);
+        $count = (int)($stmt->fetch()["c"] ?? 0);
+        if ($count > 0) {
+            $blockers[] = "{$count} attendance record" . ($count === 1 ? "" : "s");
+        }
+    } catch (Throwable) {
+        // daily_attendance may not exist on very old installs
+    }
+
+    return $blockers;
+}
+
+/**
+ * Permanently delete a subject. section_subjects rows cascade via FK.
+ *
+ * @return array{ok:bool, error?:string, subject_code?:string}
+ */
+function delete_subject(int $subjectId): array
+{
+    ensure_subjects_table();
+    $subject = get_subject_row($subjectId);
+    if (!$subject) {
+        return ["ok" => false, "error" => "Subject not found."];
+    }
+
+    $blockers = subject_delete_blockers($subjectId);
+    if ($blockers !== []) {
+        return [
+            "ok" => false,
+            "error" => "Cannot delete subject: it has " . implode(" and ", $blockers) . ". Deactivate it instead.",
+            "subject_code" => (string)$subject["subject_code"],
+        ];
+    }
+
+    $stmt = db()->prepare("DELETE FROM subjects WHERE subject_id = ?");
+    $stmt->execute([$subjectId]);
+    if ($stmt->rowCount() < 1) {
+        return ["ok" => false, "error" => "Subject could not be deleted.", "subject_code" => (string)$subject["subject_code"]];
+    }
+
+    return ["ok" => true, "subject_code" => (string)$subject["subject_code"]];
+}
+
 /** Link all active JHS subjects for a grade level to every matching section. */
 function subjects_sync_grade_to_matching_sections(string $gradeLevel): void
 {

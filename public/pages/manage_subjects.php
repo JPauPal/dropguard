@@ -48,6 +48,27 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
         }
         header("Location: manage-subjects");
         exit;
+    } elseif ($action === "delete_subject") {
+        $subjectId = (int)($_POST["subject_id"] ?? 0);
+        if ($subjectId > 0) {
+            $result = delete_subject($subjectId);
+            if ($result["ok"]) {
+                audit_log("subject_delete", "success", "subjects", $subjectId, "Deleted subject.", [
+                    "subject_code" => (string)($result["subject_code"] ?? ""),
+                ]);
+                $_SESSION["flash"] = "Subject deleted.";
+            } else {
+                audit_log("subject_delete", "failure", "subjects", $subjectId, "Failed to delete subject.", [
+                    "subject_code" => (string)($result["subject_code"] ?? ""),
+                    "error" => (string)($result["error"] ?? ""),
+                ]);
+                $error = (string)($result["error"] ?? "Subject could not be deleted.");
+            }
+        }
+        if ($error === null) {
+            header("Location: manage-subjects");
+            exit;
+        }
     } elseif ($action === "assign_subject") {
         $sectionName = trim((string)($_POST["section_name"] ?? ""));
         $subjectId = (int)($_POST["subject_id"] ?? 0);
@@ -173,14 +194,22 @@ ob_start();
                     </td>
                     <td><span class="badge text-bg-<?= (int)$subject["is_active"] === 1 ? "success" : "secondary" ?>"><?= (int)$subject["is_active"] === 1 ? "Active" : "Inactive" ?></span></td>
                     <td class="text-end">
-                      <?php if ((int)$subject["is_active"] === 1): ?>
-                        <form method="post" action="manage-subjects" onsubmit="return confirm('Deactivate this subject?');">
+                      <div class="d-flex flex-wrap justify-content-end gap-1">
+                        <?php if ((int)$subject["is_active"] === 1): ?>
+                          <form method="post" action="manage-subjects" onsubmit="return confirm('Deactivate this subject?');">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="deactivate_subject" />
+                            <input type="hidden" name="subject_id" value="<?= (int)$subject["subject_id"] ?>" />
+                            <button class="btn btn-sm btn-outline-warning" type="submit">Deactivate</button>
+                          </form>
+                        <?php endif; ?>
+                        <form method="post" action="manage-subjects" onsubmit="return confirm('Permanently delete this subject? This cannot be undone.');">
                           <?= csrf_field() ?>
-                          <input type="hidden" name="action" value="deactivate_subject" />
+                          <input type="hidden" name="action" value="delete_subject" />
                           <input type="hidden" name="subject_id" value="<?= (int)$subject["subject_id"] ?>" />
-                          <button class="btn btn-sm btn-outline-danger" type="submit">Deactivate</button>
+                          <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                         </form>
-                      <?php endif; ?>
+                      </div>
                     </td>
                   </tr>
                 <?php endforeach; ?>
