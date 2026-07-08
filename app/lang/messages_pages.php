@@ -116,6 +116,7 @@ return [
         "ml.risk_factor_subject_failing" => "Failing grade in at least one subject (lowest: :score).",
         "ml.risk_factor_failing_subjects" => "Multiple failing subjects on record (:count).",
         "ml.risk_factor_php_fallback" => "Score computed via PHP heuristic (Python engine unavailable).",
+        "data_entry.title" => "Teacher Data Entry",
         "data_entry.subtitle" => "Encode student information (grade and section). School year is set automatically.",
         "data_entry.encode_title" => "Encode Student Record",
         "data_entry.encode_hint" => "Add students to your class list. Use Student Sheets for attendance and grading.",
