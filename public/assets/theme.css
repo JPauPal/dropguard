@@ -708,6 +708,24 @@ table.dg-sheet thead th{
   font-size: .85rem;
   white-space: nowrap;
 }
+table.dg-sheet thead tr.dg-sheet-col-groups th{
+  top: 0;
+  z-index: 6;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+table.dg-sheet thead tr:not(.dg-sheet-col-groups) th{
+  top: 24px;
+  z-index: 5;
+}
+table.dg-sheet thead tr:not(.dg-sheet-col-groups) th.dg-sheet-sticky-col,
+table.dg-sheet thead tr:not(.dg-sheet-col-groups) th:first-child{
+  z-index: 7;
+}
+table.dg-sheet thead tr.dg-sheet-col-groups th.dg-sheet-sticky-col,
+table.dg-sheet thead tr.dg-sheet-col-groups th:first-child{
+  z-index: 8;
+}
 
 table.dg-sheet th:first-child,
 table.dg-sheet td:first-child{
@@ -780,39 +798,10 @@ table.dg-sheet tbody tr:hover td:first-child{
   height: 0;
 }
 .dg-sheet-calendar .dg-sheet-day{
-  min-width: 56px;
-  width: 56px;
-  padding: 6px 2px !important;
+  min-width: 118px;
+  width: 118px;
+  padding: 4px 3px !important;
 }
-.dg-att-status{
-  min-width: 44px;
-  width: 44px;
-  font-size: .75rem;
-  padding: 0.15rem 0.25rem;
-  line-height: 1.1;
-}
-.dg-att-status.dg-att-present{
-  background: #e9f8ee;
-  border-color: rgba(11,93,30,.22);
-  color: #084615;
-  font-weight: 700;
-}
-.dg-att-status.dg-att-late{
-  background: #fff6dd;
-  border-color: rgba(201,162,39,.42);
-  color: #5b4500;
-  font-weight: 700;
-}
-.dg-att-status.dg-att-absent{
-  background: #fff0f0;
-  border-color: rgba(180,40,40,.35);
-  color: #5c1212;
-  font-weight: 700;
-}
-.dg-att-status:focus{
-  box-shadow: 0 0 0 0.2rem rgba(11,93,30,.14) !important;
-}
-/* Keep last day column same width as others. */
 
 /* Prevent sticky Student column overlapping day cells */
 .dg-sheet-calendar th:first-child,
@@ -871,10 +860,376 @@ table.dg-sheet tbody tr:hover td:first-child{
   line-height: 1.05;
 }
 .dg-cal-day-index{
-  font-size: .75rem;
-  color: rgba(11,93,30,.88);
+  font-size: .72rem;
+  color: rgba(11,93,30,.92);
   font-weight: 800;
+  letter-spacing: .02em;
 }
+.dg-sheet-day-marker{
+  background: linear-gradient(180deg, rgba(212,175,55,.10), rgba(255,255,255,.98)) !important;
+}
+
+/* Shared sheet toolbar */
+.dg-sheet-toolbar{
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: .85rem 1rem;
+  padding: 14px 16px;
+  border: 1px solid rgba(11,93,30,.12);
+  border-radius: 14px;
+  background:
+    radial-gradient(480px 120px at 0% 0%, rgba(212,175,55,.08), transparent 58%),
+    linear-gradient(180deg, rgba(247,250,247,.98), rgba(255,255,255,.96));
+}
+.dg-sheet-toolbar-main{
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+  min-width: 0;
+}
+.dg-sheet-toolbar-heading{
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+.dg-sheet-toolbar-badge{
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  flex: 0 0 auto;
+}
+.dg-sheet-toolbar-badge--att{
+  color: #084615;
+  background: rgba(11,93,30,.12);
+  border: 1px solid rgba(11,93,30,.18);
+}
+.dg-sheet-toolbar-badge--grade{
+  color: #4a3800;
+  background: rgba(212,175,55,.18);
+  border: 1px solid rgba(201,162,39,.28);
+}
+.dg-sheet-toolbar-title{
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--dg-ink);
+  line-height: 1.15;
+}
+.dg-sheet-toolbar-subtitle{
+  font-size: .8rem;
+  color: var(--dg-muted);
+  margin-top: 2px;
+}
+.dg-sheet-meta-chips{
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
+.dg-sheet-chip{
+  display: inline-flex;
+  align-items: center;
+  padding: .22rem .62rem;
+  border-radius: 999px;
+  font-size: .74rem;
+  font-weight: 700;
+  color: #0f4d1c;
+  background: rgba(11,93,30,.08);
+  border: 1px solid rgba(11,93,30,.12);
+}
+.dg-sheet-chip--muted{
+  color: rgba(15,28,18,.72);
+  background: rgba(15,28,18,.04);
+  border-color: rgba(15,28,18,.08);
+}
+.dg-sheet-toolbar-actions{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  margin-left: auto;
+}
+.dg-sheet-scroll-btns .btn{
+  min-width: 36px;
+}
+
+/* Column group headers */
+.dg-sheet-col-groups th{
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 4px 8px !important;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  text-align: center;
+  color: rgba(15,28,18,.58);
+  background: rgba(246,248,246,.98) !important;
+  border-bottom: 1px solid rgba(11,93,30,.08) !important;
+}
+.dg-sheet-col-group--days{ background: rgba(11,93,30,.04) !important; }
+.dg-sheet-col-group--summary,
+.dg-sheet-col-group--att{ background: rgba(212,175,55,.08) !important; }
+.dg-sheet-col-group--scores{ background: rgba(11,93,30,.05) !important; }
+.dg-sheet-col-group--academic{ background: rgba(11,93,30,.07) !important; }
+.dg-sheet-col-group--result{ background: rgba(15,28,18,.05) !important; }
+.dg-sheet-col-group--student{
+  text-align: left !important;
+}
+
+/* Attendance pills */
+.dg-att-status-native{
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+.dg-att-cell{
+  position: relative;
+  padding: 4px 3px !important;
+  vertical-align: middle !important;
+}
+.dg-att-pills{
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(15,28,18,.04);
+  border: 1px solid rgba(15,28,18,.06);
+}
+.dg-att-pill{
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(15,28,18,.48);
+  background: transparent;
+  transition: background var(--dg-transition), color var(--dg-transition), box-shadow var(--dg-transition), transform var(--dg-transition);
+}
+.dg-att-pill:hover:not(:disabled){
+  transform: translateY(-1px);
+}
+.dg-att-pill:disabled{
+  opacity: .55;
+  cursor: not-allowed;
+}
+.dg-att-pill.active.dg-att-pill--blank{
+  color: rgba(15,28,18,.72);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15,28,18,.08);
+}
+.dg-att-pill.active.dg-att-pill--present{
+  color: #084615;
+  background: #dff5e6;
+  box-shadow: inset 0 0 0 1px rgba(11,93,30,.18);
+}
+.dg-att-pill.active.dg-att-pill--late{
+  color: #5b4500;
+  background: #fff0c7;
+  box-shadow: inset 0 0 0 1px rgba(201,162,39,.32);
+}
+.dg-att-pill.active.dg-att-pill--absent{
+  color: #5c1212;
+  background: #ffe3e3;
+  box-shadow: inset 0 0 0 1px rgba(180,40,40,.24);
+}
+.dg-att-cell-present{ background: rgba(11,93,30,.03) !important; }
+.dg-att-cell-late{ background: rgba(201,162,39,.06) !important; }
+.dg-att-cell-absent{ background: rgba(180,40,40,.05) !important; }
+
+/* (day column width set above in calendar section) */
+
+.dg-sheet-summary-col{
+  min-width: 72px;
+  background: rgba(212,175,55,.05) !important;
+  font-weight: 700;
+  color: rgba(15,28,18,.82);
+}
+.dg-sheet-summary-val{
+  font-variant-numeric: tabular-nums;
+}
+.dg-sheet-calendar thead .dg-sheet-summary-col{
+  background: linear-gradient(180deg, rgba(255,248,232,.98), rgba(255,255,255,.98)) !important;
+}
+
+.dg-sheet-legend{
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(11,93,30,.10);
+  background: rgba(247,250,247,.92);
+}
+.dg-sheet-legend-items{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem .65rem;
+  font-size: .78rem;
+  font-weight: 600;
+  color: rgba(15,28,18,.78);
+}
+.dg-sheet-legend-label{
+  font-weight: 800;
+  color: rgba(15,28,18,.58);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-size: .68rem;
+  margin-right: .15rem;
+}
+.dg-sheet-legend-pill{
+  pointer-events: none;
+  width: 22px;
+  height: 22px;
+  font-size: .64rem;
+}
+.dg-sheet-legend-note{
+  margin-top: .55rem;
+  line-height: 1.45;
+}
+
+/* Grading sheet */
+.dg-grade-toolbar-actions{
+  align-items: stretch;
+}
+.dg-grade-weights-panel{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem .65rem;
+  padding: .45rem .65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(15,28,18,.08);
+  background: rgba(255,255,255,.82);
+}
+.dg-grade-weights-label{
+  font-size: .72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: rgba(15,28,18,.52);
+}
+.dg-grade-weights-inputs{
+  max-width: 420px;
+}
+.dg-grade-weights-total{
+  font-weight: 600;
+  color: rgba(15,28,18,.62);
+  white-space: nowrap;
+}
+.dg-sheet-wrap-grading{
+  border-radius: 14px;
+}
+table.dg-sheet-grading .dg-grade-input-col{
+  min-width: 92px;
+  background: rgba(11,93,30,.02);
+}
+table.dg-sheet-grading .dg-grade-score-col,
+table.dg-sheet-grading .dg-grade-final-col{
+  min-width: 96px;
+  background: rgba(11,93,30,.04);
+}
+table.dg-sheet-grading .dg-grade-att-col{
+  min-width: 72px;
+  background: rgba(212,175,55,.06);
+  font-variant-numeric: tabular-nums;
+}
+table.dg-sheet-grading .dg-grade-student-cell{
+  min-width: 220px;
+  background: #f7fbf8 !important;
+}
+table.dg-sheet-grading tbody tr.dg-grade-row-final td{
+  background: rgba(15,28,18,.02);
+}
+table.dg-sheet-grading tbody tr.dg-grade-row-final .dg-grade-student-cell{
+  background: #f3f6f4 !important;
+}
+.dg-grade-score-pill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-size: .84rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: rgba(11,93,30,.10);
+  color: #0a4d1a;
+  border: 1px solid rgba(11,93,30,.14);
+}
+.dg-grade-score-pill.dg-grade-final{
+  background: rgba(212,175,55,.16);
+  color: #4a3800;
+  border-color: rgba(201,162,39,.28);
+}
+.dg-grade-final-badge{
+  background: rgba(15,28,18,.10) !important;
+  color: rgba(15,28,18,.72) !important;
+  font-weight: 700;
+}
+.dg-grade-extra-hint{
+  font-size: .68rem !important;
+  margin-top: 2px;
+}
+table.dg-sheet-grading .dg-sheet-cell-input{
+  min-width: 64px;
+  padding: .2rem .35rem !important;
+  border: 1px solid rgba(11,93,30,.12) !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+}
+table.dg-sheet-grading .dg-sheet-cell-input:focus{
+  border-color: rgba(11,93,30,.28) !important;
+  box-shadow: 0 0 0 .15rem rgba(11,93,30,.10) !important;
+}
+
+.dg-sheet-filter-card .nav-pills .nav-link{
+  font-weight: 700;
+  border-radius: 999px;
+  padding: .42rem .95rem;
+  color: rgba(15,28,18,.68);
+  background: rgba(15,28,18,.04);
+}
+.dg-sheet-filter-card .nav-pills .nav-link.active{
+  background: linear-gradient(135deg, #0d6b24, #0a4d1a);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(11,93,30,.18);
+}
+
+@media (max-width: 991.98px){
+  .dg-sheet-toolbar-actions{
+    width: 100%;
+    margin-left: 0;
+  }
+  .dg-grade-toolbar-actions{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dg-grade-weights-panel{
+    width: 100%;
+  }
+  .dg-grade-weights-inputs{
+    max-width: none;
+    width: 100%;
+  }
+}
+
 .dg-sheet-calendar tbody tr:nth-child(even) td{
   background: rgba(11,93,30,.015);
 }
