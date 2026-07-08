@@ -23,8 +23,14 @@ function ensure_student_batches_table(): void
         ) ENGINE=InnoDB"
     );
 
-    db()->exec("CREATE INDEX IF NOT EXISTS idx_batches_year ON student_batches (school_year)");
-    db()->exec("CREATE INDEX IF NOT EXISTS idx_batches_student ON student_batches (student_id)");
+    try {
+        db()->exec("CREATE INDEX idx_batches_year ON student_batches (school_year)");
+    } catch (Throwable) {
+    }
+    try {
+        db()->exec("CREATE INDEX idx_batches_student ON student_batches (student_id)");
+    } catch (Throwable) {
+    }
 
     try {
         $hasS = db()->query("SHOW COLUMNS FROM `students` LIKE 'strand'")->fetch();
