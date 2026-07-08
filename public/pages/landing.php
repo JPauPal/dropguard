@@ -67,7 +67,6 @@ ob_start();
             })();
           </script>
         </div>
-        <a class="btn btn-sm btn-outline-dark" href="login"><?= htmlspecialchars(t("landing.nav_log_in"), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></a>
         <a class="btn btn-sm btn-dark" href="login"><?= htmlspecialchars(t("landing.nav_sign_in"), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></a>
       </div>
     </div>
