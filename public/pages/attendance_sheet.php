@@ -1528,9 +1528,9 @@ ob_start();
             <tr>
               <th>Student</th>
               <th>Grade</th>
-              <th class="text-end">Quiz</th>
-              <th class="text-end">Exam</th>
-              <th class="text-end">Project</th>
+              <th class="text-end">Quiz<br><span class="text-muted fw-normal small dg-grade-max-quiz">Max <?= (int)$weights["quiz"] ?></span></th>
+              <th class="text-end">Exam<br><span class="text-muted fw-normal small dg-grade-max-exam">Max <?= (int)$weights["exam"] ?></span></th>
+              <th class="text-end">Project<br><span class="text-muted fw-normal small dg-grade-max-project">Max <?= (int)$weights["project"] ?></span></th>
               <th class="text-end">Extra</th>
               <th class="text-end">Academic</th>
               <th class="text-end">Present</th>
@@ -1566,13 +1566,16 @@ ob_start();
                 </td>
                 <td class="text-muted small"><?= htmlspecialchars((string)$s["grade_level"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></td>
                 <td class="text-end">
-                  <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-quiz" type="number" step="0.01" min="0" max="100" name="rows[<?= $sid ?>][quiz]" value="<?= htmlspecialchars((string)$quiz, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
+                  <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-quiz" type="number" step="0.01" min="0" max="<?= (int)$weights["quiz"] ?>" name="rows[<?= $sid ?>][quiz]" value="<?= htmlspecialchars((string)$quiz, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
+                  <div class="text-muted small dg-grade-hint-quiz">Max <?= (int)$weights["quiz"] ?></div>
                 </td>
                 <td class="text-end">
-                  <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-exam" type="number" step="0.01" min="0" max="100" name="rows[<?= $sid ?>][exam]" value="<?= htmlspecialchars((string)$exam, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
+                  <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-exam" type="number" step="0.01" min="0" max="<?= (int)$weights["exam"] ?>" name="rows[<?= $sid ?>][exam]" value="<?= htmlspecialchars((string)$exam, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
+                  <div class="text-muted small dg-grade-hint-exam">Max <?= (int)$weights["exam"] ?></div>
                 </td>
                 <td class="text-end">
-                  <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-project" type="number" step="0.01" min="0" max="100" name="rows[<?= $sid ?>][project]" value="<?= htmlspecialchars((string)$project, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
+                  <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-project" type="number" step="0.01" min="0" max="<?= (int)$weights["project"] ?>" name="rows[<?= $sid ?>][project]" value="<?= htmlspecialchars((string)$project, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
+                  <div class="text-muted small dg-grade-hint-project">Max <?= (int)$weights["project"] ?></div>
                 </td>
                 <td class="text-end">
                   <input class="form-control form-control-sm text-end dg-sheet-cell-input dg-grade-extra" type="number" step="1" min="0" max="<?= (int)$extracurricularMax ?>" name="rows[<?= $sid ?>][extracurricular_score]" value="<?= (int)$extra ?>" <?= ($termId === "" || $isFinal || $gradingReadOnly) ? "disabled" : "" ?> />
@@ -1632,6 +1635,18 @@ ob_start();
       const n = Number.isFinite(x) ? x : 0;
       return Math.max(0, Math.min(100, n));
     }
+    function clampComponent(v, max) {
+      const x = Number(v);
+      const n = Number.isFinite(x) ? x : 0;
+      const hi = Number(max) > 0 ? Number(max) : 0;
+      if (hi <= 0) return 0;
+      return Math.max(0, Math.min(hi, n));
+    }
+    function componentContribution(score, weightMax) {
+      const w = Number(weightMax) || 0;
+      if (w <= 0) return 0;
+      return clampComponent(score, w);
+    }
     function syncGradeRow(tr, w) {
       const qEl = tr.querySelector('.dg-grade-quiz');
       const eEl = tr.querySelector('.dg-grade-exam');
@@ -1643,18 +1658,18 @@ ob_start();
       const chip = tr.querySelector('.dg-grade-chip');
       const chipText = tr.querySelector('.dg-grade-chip-text');
       if (!qEl || !eEl || !pEl || !xEl || !academicEl || !finalEl || !chip || !chipText) return;
-      const q = clampPercent(qEl.value);
-      const e = clampPercent(eEl.value);
-      const p = clampPercent(pEl.value);
+      const wq = Number(w.quiz) || 0;
+      const we = Number(w.exam) || 0;
+      const wp = Number(w.project) || 0;
+      const q = componentContribution(qEl.value, wq);
+      const e = componentContribution(eEl.value, we);
+      const p = componentContribution(pEl.value, wp);
       const x = clampPercent(xEl.value);
       qEl.value = String(q);
       eEl.value = String(e);
       pEl.value = String(p);
       xEl.value = String(x);
-      const wq = (Number(w.quiz) || 0) / 100;
-      const we = (Number(w.exam) || 0) / 100;
-      const wp = (Number(w.project) || 0) / 100;
-      const academic = Math.round(Math.max(0, Math.min(100, (q * wq) + (e * we) + (p * wp))));
+      const academic = Math.round(Math.max(0, Math.min(100, q + e + p)));
       const extraCap = Number(w.extra) || 0;
       const ig = Math.round(Math.max(0, Math.min(100, academic + Math.min(x, extraCap))));
       const score = depedTransmute(ig);
@@ -1688,6 +1703,18 @@ ob_start();
           totalWrap.classList.toggle('text-danger', !ok);
           totalWrap.classList.toggle('text-muted', ok);
         }
+        document.querySelectorAll('.dg-grade-quiz').forEach((el) => { el.max = String(Math.max(0, w.quiz)); });
+        document.querySelectorAll('.dg-grade-exam').forEach((el) => { el.max = String(Math.max(0, w.exam)); });
+        document.querySelectorAll('.dg-grade-project').forEach((el) => { el.max = String(Math.max(0, w.project)); });
+        const maxQuizEl = document.querySelector('.dg-grade-max-quiz');
+        const maxExamEl = document.querySelector('.dg-grade-max-exam');
+        const maxProjectEl = document.querySelector('.dg-grade-max-project');
+        if (maxQuizEl) maxQuizEl.textContent = 'Max ' + Math.round(w.quiz);
+        if (maxExamEl) maxExamEl.textContent = 'Max ' + Math.round(w.exam);
+        if (maxProjectEl) maxProjectEl.textContent = 'Max ' + Math.round(w.project);
+        document.querySelectorAll('.dg-grade-hint-quiz').forEach((el) => { el.textContent = 'Max ' + Math.round(w.quiz); });
+        document.querySelectorAll('.dg-grade-hint-exam').forEach((el) => { el.textContent = 'Max ' + Math.round(w.exam); });
+        document.querySelectorAll('.dg-grade-hint-project').forEach((el) => { el.textContent = 'Max ' + Math.round(w.project); });
         // Only enable save/finalize when weights total is 100.
         if (saveBtn) saveBtn.disabled = !ok || saveBtn.hasAttribute('data-locked');
         if (finBtn) finBtn.disabled = !ok || finBtn.hasAttribute('data-locked');

@@ -69,7 +69,7 @@ ob_start();
       </div>
       <div class="col-12 mt-2">
         <div class="fw-semibold">Grading System</div>
-        <div class="small text-muted">Component weights must total 100 points. When enabled, final scores use DepEd Order No. 8 transmutation via <code>60 + (initial × 0.25)</code> below 60 and <code>75 + ((initial − 60) × 0.625)</code> at or above 60.</div>
+        <div class="small text-muted">Component weights must total 100 points and define the maximum raw score for quiz, exam, and project. When enabled, final scores use DepEd Order No. 8 transmutation via <code>60 + (initial × 0.25)</code> below 60 and <code>75 + ((initial − 60) × 0.625)</code> at or above 60.</div>
       </div>
       <div class="col-md-4">
         <label class="form-label">Quiz</label>

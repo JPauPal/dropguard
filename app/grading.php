@@ -142,6 +142,14 @@ function grading_clamp_percent(float $value): float
     return max(0.0, min(100.0, $value));
 }
 
+function grading_clamp_component(float $value, float $max): float
+{
+    if ($max <= 0.0) {
+        return 0.0;
+    }
+    return max(0.0, min($max, $value));
+}
+
 /**
  * @return array{
  *   quiz: float,
@@ -258,22 +266,29 @@ function grading_allow_partial_gpa_rollup(): bool
 }
 
 /**
- * Academic Score = (S_quiz × W_quiz) + (S_exam × W_exam) + (S_project × W_project)
+ * Academic score from raw points per component (0 to each weight max).
+ * Academic = Σ (score_i / W_i) × W_i = sum of clamped raw points when W_i is the component cap.
  */
 function grading_compute_academic_score(float $quiz, float $exam, float $project, ?array $weights = null): float
 {
     $weights = $weights ?? grading_weights();
-    $fractions = $weights["fractions"] ?? [
-        "quiz" => ((float)($weights["quiz"] ?? GRADING_DEFAULT_WEIGHT_QUIZ)) / 100.0,
-        "exam" => ((float)($weights["exam"] ?? GRADING_DEFAULT_WEIGHT_EXAM)) / 100.0,
-        "project" => ((float)($weights["project"] ?? GRADING_DEFAULT_WEIGHT_PROJECT)) / 100.0,
-    ];
+    $wQuiz = (float)($weights["quiz"] ?? GRADING_DEFAULT_WEIGHT_QUIZ);
+    $wExam = (float)($weights["exam"] ?? GRADING_DEFAULT_WEIGHT_EXAM);
+    $wProject = (float)($weights["project"] ?? GRADING_DEFAULT_WEIGHT_PROJECT);
 
-    $academic = (grading_clamp_percent($quiz) * (float)$fractions["quiz"])
-        + (grading_clamp_percent($exam) * (float)$fractions["exam"])
-        + (grading_clamp_percent($project) * (float)$fractions["project"]);
+    $academic = grading_component_contribution($quiz, $wQuiz)
+        + grading_component_contribution($exam, $wExam)
+        + grading_component_contribution($project, $wProject);
 
     return (float)round(grading_clamp_percent($academic), 2);
+}
+
+function grading_component_contribution(float $score, float $weightMax): float
+{
+    if ($weightMax <= 0.0) {
+        return 0.0;
+    }
+    return grading_clamp_component($score, $weightMax);
 }
 
 /** @deprecated Use grading_compute_academic_score() */
@@ -328,19 +343,31 @@ function grading_compute_final_score(float $initialScore): float
     return (float)round($initial, 2);
 }
 
-function grading_validate_component_input(float $quiz, float $exam, float $project, float $extracurricular): ?string
-{
+function grading_validate_component_input(
+    float $quiz,
+    float $exam,
+    float $project,
+    float $extracurricular,
+    ?array $weights = null
+): ?string {
+    $weights = $weights ?? grading_weights();
     foreach (
         [
-            "Quiz" => $quiz,
-            "Exam" => $exam,
-            "Project" => $project,
-            "Extracurricular" => $extracurricular,
-        ] as $label => $value
+            "Quiz" => [$quiz, (float)($weights["quiz"] ?? GRADING_DEFAULT_WEIGHT_QUIZ)],
+            "Exam" => [$exam, (float)($weights["exam"] ?? GRADING_DEFAULT_WEIGHT_EXAM)],
+            "Project" => [$project, (float)($weights["project"] ?? GRADING_DEFAULT_WEIGHT_PROJECT)],
+        ] as $label => [$value, $max]
     ) {
-        if ($value < 0.0 || $value > 100.0) {
-            return "{$label} score must be between 0 and 100.";
+        if ($value < 0.0) {
+            return "{$label} score cannot be negative.";
         }
+        if ($max > 0.0 && $value > $max) {
+            return "{$label} score must be between 0 and {$max}.";
+        }
+    }
+
+    if ($extracurricular < 0.0 || $extracurricular > 100.0) {
+        return "Extracurricular score must be between 0 and 100.";
     }
 
     if ($extracurricular > grading_extracurricular_cap()) {
@@ -364,14 +391,19 @@ function grading_validate_component_input(float $quiz, float $exam, float $proje
  */
 function grading_compute_row_scores(float $quiz, float $exam, float $project, float $extracurricular, ?array $weights = null): array
 {
+    $weights = $weights ?? grading_weights();
+    $wQuiz = (float)($weights["quiz"] ?? GRADING_DEFAULT_WEIGHT_QUIZ);
+    $wExam = (float)($weights["exam"] ?? GRADING_DEFAULT_WEIGHT_EXAM);
+    $wProject = (float)($weights["project"] ?? GRADING_DEFAULT_WEIGHT_PROJECT);
+
     $academic = grading_compute_academic_score($quiz, $exam, $project, $weights);
     $initial = grading_compute_initial_score($academic, $extracurricular);
     $final = grading_compute_final_score($initial);
 
     return [
-        "quiz" => grading_clamp_percent($quiz),
-        "exam" => grading_clamp_percent($exam),
-        "project" => grading_clamp_percent($project),
+        "quiz" => grading_clamp_component($quiz, $wQuiz),
+        "exam" => grading_clamp_component($exam, $wExam),
+        "project" => grading_clamp_component($project, $wProject),
         "extracurricular" => grading_clamp_percent($extracurricular),
         "academic_score" => $academic,
         "initial_score" => $initial,
@@ -774,7 +806,7 @@ function grading_persist_student_subject(
         }
     }
 
-    $validationError = grading_validate_component_input($quiz, $exam, $project, $extracurricular);
+    $validationError = grading_validate_component_input($quiz, $exam, $project, $extracurricular, $weights);
     if ($validationError !== null) {
         return ["ok" => false, "error" => $validationError];
     }
