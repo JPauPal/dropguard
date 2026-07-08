@@ -9,6 +9,7 @@ require_once __DIR__ . "/../../app/workflow.php";
 require_once __DIR__ . "/../../app/curriculum.php";
 require_once __DIR__ . "/../../app/sections.php";
 require_once __DIR__ . "/../../app/students.php";
+require_once __DIR__ . "/../../app/academic_period.php";
 
 require_login();
 require_role(["Teacher", "Admin"]);
@@ -102,7 +103,7 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
                 ]);
             }
         }
-    } else {
+    } elseif ($action === "encode_student") {
     $lrn = trim((string)($_POST["lrn"] ?? ""));
     $firstName = trim((string)($_POST["first_name"] ?? ""));
     $middleName = trim((string)($_POST["middle_name"] ?? ""));
@@ -112,10 +113,11 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
     $gradeLevel = curriculum_normalize_grade_level($gradeLevelRaw) ?? "";
     $strandRaw = trim((string)($_POST["strand"] ?? ""));
     [$strandNorm, $strandErr] = curriculum_validate_strand_input($gradeLevel !== "" ? $gradeLevel : null, $strandRaw);
-    $section = trim((string)($_POST["section"] ?? ""));
+    $sectionRaw = trim((string)($_POST["section"] ?? ""));
+    $section = resolve_section_name($sectionRaw) ?? $sectionRaw;
     $schoolYear = trim((string)($_POST["school_year"] ?? ""));
     if ($schoolYear === "") {
-        $schoolYear = default_current_school_year();
+        $schoolYear = academic_period_active_school_year();
     }
     $allowedSections = list_sections(null);
 
@@ -223,6 +225,8 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
             $error = student_save_error_message($e);
         }
     }
+    } elseif ($action !== "") {
+        $error = t("data_entry.err_unknown_action");
     }
 }
 
@@ -269,6 +273,7 @@ if ($isTeacher && $rows) {
 
 $sectionOptions = list_sections(null);
 $sectionOptionsAll = $sectionOptions;
+$hasSectionOptions = $sectionOptions !== [];
 
 $dgJs = [
     "selectedTpl" => tr("data_entry.js_selected", ["count" => "__DG_COUNT__"]),
@@ -279,7 +284,7 @@ $dgJs = [
 ];
 
 ob_start();
-$defaultSchoolYear = default_current_school_year();
+$defaultSchoolYear = academic_period_active_school_year();
 ?>
 <div class="dg-page-fill">
   <div class="dg-page-header mb-3">
@@ -290,6 +295,15 @@ $defaultSchoolYear = default_current_school_year();
       </div>
     </div>
   </div>
+
+  <?php if (!$hasSectionOptions): ?>
+    <div class="alert alert-warning">
+      <?= h_t("data_entry.no_sections") ?>
+      <?php if (($currentUser["role"] ?? "") === "Teacher"): ?>
+        <?= " " . h_t("data_entry.no_sections_teacher_hint") ?>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
 
   <div class="row g-3 dg-page-split dg-flex-1">
   <div class="col-lg-5">
@@ -303,7 +317,7 @@ $defaultSchoolYear = default_current_school_year();
         <?php if ($success): ?>
           <div class="alert alert-success"><?= htmlspecialchars($success, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
         <?php endif; ?>
-        <form method="post" action="data-entry">
+        <form method="post" action="data-entry" id="dgDataEntryForm">
           <?= csrf_field() ?>
           <input type="hidden" name="action" value="encode_student" />
           <input type="hidden" name="school_year" value="<?= htmlspecialchars($defaultSchoolYear, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
@@ -365,11 +379,12 @@ $defaultSchoolYear = default_current_school_year();
                 <?php endforeach; ?>
               </select>
             <?php else: ?>
-              <input class="form-control" name="section" placeholder="<?= h_t("data_entry.section_disabled_ph") ?>" disabled />
+              <input class="form-control" placeholder="<?= h_t("data_entry.section_disabled_ph") ?>" disabled />
               <div class="form-text text-danger"><?= h_t("data_entry.no_sections") ?></div>
             <?php endif; ?>
+            <div class="form-text text-danger d-none" id="dgDataEntryNoSectionMatch"><?= h_t("data_entry.err_no_section_for_grade") ?></div>
           </div>
-          <button class="btn btn-dark w-100 mt-2" type="submit"><?= h_t("common.save") ?></button>
+          <button class="btn btn-dark w-100 mt-2" type="submit" id="dgDataEntrySaveBtn" <?= $hasSectionOptions ? "" : "disabled" ?>><?= h_t("common.save") ?></button>
         </form>
       </div>
     </div>
@@ -570,11 +585,14 @@ $defaultSchoolYear = default_current_school_year();
       });
     }
 
+    const form = document.getElementById("dgDataEntryForm");
     const gEl = document.getElementById("dgDataEntryGrade");
     const sEl = document.getElementById("dgDataEntrySection");
     const sectionWrap = document.getElementById("dgDataEntrySectionWrap");
     const strandRow = document.getElementById("dgDataEntryStrandRow");
     const strandSel = document.getElementById("dgDataEntryStrand");
+    const noSectionMatch = document.getElementById("dgDataEntryNoSectionMatch");
+    const saveBtn = document.getElementById("dgDataEntrySaveBtn");
     if (gEl && sectionWrap) {
       function canon(v) {
         if (!v) return "";
@@ -595,6 +613,20 @@ $defaultSchoolYear = default_current_school_year();
         strandRow.classList.toggle("d-none", !shs);
         strandSel.required = shs;
         if (!shs) strandSel.value = "";
+      }
+      function visibleSectionCount(g, strand, shs) {
+        if (!sEl || !sEl.options) return 0;
+        let n = 0;
+        for (let i = 0; i < sEl.options.length; i++) {
+          const opt = sEl.options[i];
+          if (!opt.value || opt.hidden) continue;
+          const og = opt.getAttribute("data-section-grade") || "";
+          const hideByGrade = !g ? !!opt.value : !!(og && og !== g);
+          const st = opt.getAttribute("data-section-strand") || "";
+          const hideByStrand = !!(strand && shs && st !== strand);
+          if (!hideByGrade && !hideByStrand) n++;
+        }
+        return n;
       }
       function syncSections() {
         const g = canon(gEl.value);
@@ -618,10 +650,25 @@ $defaultSchoolYear = default_current_school_year();
           if (sel && sel.hidden) sEl.value = "";
           sEl.disabled = !g;
         }
+        const matchCount = visibleSectionCount(g, strand, shs);
+        if (noSectionMatch) {
+          noSectionMatch.classList.toggle("d-none", !g || matchCount > 0);
+        }
+        if (saveBtn) {
+          saveBtn.disabled = !g || matchCount <= 0;
+        }
         syncStrandRow();
       }
       gEl.addEventListener("change", syncSections);
       if (strandSel) strandSel.addEventListener("change", syncSections);
+      if (form) {
+        form.addEventListener("submit", function () {
+          if (sEl) sEl.disabled = false;
+          if (strandSel && strandRow && strandRow.classList.contains("d-none")) {
+            strandSel.disabled = false;
+          }
+        });
+      }
       syncSections();
     }
   })();

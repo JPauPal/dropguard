@@ -416,3 +416,83 @@ function academic_period_grading_blocked_message(string $schoolYear, string $ter
     }
     return "This grading period is closed for school year {$schoolYear}. Contact an administrator to reopen it or use the active period.";
 }
+
+function academic_period_term_start_setting_key(string $schoolYear, string $termId): string
+{
+    return "term_start_" . $schoolYear . "_" . $termId;
+}
+
+/** Admin-configured Day 1 date for a grading period, or null if not set. */
+function academic_period_get_term_start_date(string $schoolYear, string $termId): ?string
+{
+    if ($schoolYear === "" || $termId === "") {
+        return null;
+    }
+    ensure_app_settings_table();
+    $value = trim((string)(get_setting(academic_period_term_start_setting_key($schoolYear, $termId), "") ?? ""));
+    if ($value !== "" && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        return $value;
+    }
+    return null;
+}
+
+function academic_period_set_term_start_date(string $schoolYear, string $termId, string $date): void
+{
+    if ($schoolYear === "" || $termId === "") {
+        throw new InvalidArgumentException("School year and term are required.");
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        throw new InvalidArgumentException("Date must be YYYY-MM-DD.");
+    }
+    ensure_app_settings_table();
+    set_setting(academic_period_term_start_setting_key($schoolYear, $termId), $date);
+}
+
+/**
+ * Estimated Day 1 when admin has not configured one (Philippine-style quarter windows).
+ */
+function academic_period_default_term_start_date(string $schoolYear, string $termId): string
+{
+    $meta = curriculum_term_meta($termId);
+    $sort = (int)($meta["term_sort"] ?? 1);
+    if (!preg_match('/^(\d{4})-(\d{4})$/', $schoolYear, $m)) {
+        $y = (int)date("Y");
+        return sprintf("%d-06-01", $y);
+    }
+    $y1 = (int)$m[1];
+    $y2 = (int)$m[2];
+    return match ($sort) {
+        1 => sprintf("%d-06-01", $y1),
+        2 => sprintf("%d-10-01", $y1),
+        3 => sprintf("%d-01-15", $y2),
+        4 => sprintf("%d-03-01", $y2),
+        default => sprintf("%d-06-01", $y1),
+    };
+}
+
+/** Day 1 date teachers should use for attendance columns (configured, else estimated). */
+function academic_period_resolve_term_start_date(string $schoolYear, string $termId): string
+{
+    return academic_period_get_term_start_date($schoolYear, $termId)
+        ?? academic_period_default_term_start_date($schoolYear, $termId);
+}
+
+/**
+ * @return array<string, array{configured: ?string, effective: string, label: string}>
+ */
+function academic_period_term_start_dates_for_year(string $schoolYear): array
+{
+    $out = [];
+    foreach (["junior_high_school", "senior_high_school"] as $trackKey) {
+        foreach (curriculum_performance_terms($trackKey) as $termRow) {
+            $termId = (string)$termRow["term_id"];
+            $configured = academic_period_get_term_start_date($schoolYear, $termId);
+            $out[$termId] = [
+                "configured" => $configured,
+                "effective" => $configured ?? academic_period_default_term_start_date($schoolYear, $termId),
+                "label" => curriculum_term_label($termId),
+            ];
+        }
+    }
+    return $out;
+}

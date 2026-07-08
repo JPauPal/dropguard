@@ -68,6 +68,12 @@ function sheet_term_allowed_for_grade(string $grade, string $termId): bool
 $user = current_user();
 $isTeacher = (($user["role"] ?? "") === "Teacher");
 $isCounselor = (($user["role"] ?? "") === "Counselor");
+$teacherClassCount = 0;
+if ($isTeacher) {
+    $stmtTc = db()->prepare("SELECT COUNT(*) FROM teacher_students WHERE teacher_user_id = ?");
+    $stmtTc->execute([(int)($user["user_id"] ?? 0)]);
+    $teacherClassCount = (int)$stmtTc->fetchColumn();
+}
 
 start_app_session();
 $flash = $_SESSION["flash"] ?? null;
@@ -89,14 +95,6 @@ if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
     $month = date("Y-m");
 }
 
-// Attendance start date (generates a 50-day run)
-$attendanceDate = trim((string)($_GET["attendance_date"] ?? ""));
-if ($attendanceDate !== "" && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $attendanceDate)) {
-    $attendanceDate = "";
-}
-if ($attendanceDate === "") {
-    $attendanceDate = $month . "-01";
-}
 // Always include weekends (some classes are scheduled on weekends).
 $includeWeekends = true;
 $hasGradeParam = array_key_exists("grade", $_GET);
@@ -111,6 +109,18 @@ if ($schoolYear === "") {
 if ($schoolYear !== "" && !is_valid_school_year_sequence($schoolYear)) {
     $schoolYear = academic_period_active_school_year();
 }
+
+// Day 1 date for attendance columns — from admin calendar, not deployment date.
+$attendanceDateRaw = trim((string)($_GET["attendance_date"] ?? ""));
+$hasExplicitAttendanceDate = array_key_exists("attendance_date", $_GET) && $attendanceDateRaw !== "";
+if ($hasExplicitAttendanceDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $attendanceDateRaw)) {
+    $attendanceDate = $attendanceDateRaw;
+} elseif ($termId !== "" && $schoolYear !== "") {
+    $attendanceDate = academic_period_resolve_term_start_date($schoolYear, $termId);
+} else {
+    $attendanceDate = "";
+}
+$attendanceDay1IsConfigured = ($termId !== "" && $schoolYear !== "" && academic_period_get_term_start_date($schoolYear, $termId) !== null);
 // When opening Student Sheets from nav, default to an empty state (no students)
 // until the teacher picks a filter.
 if (!$hasGradeParam && !$hasSectionNameParam) {
@@ -435,7 +445,9 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
     } elseif ($postView === "sheet") {
         $attendanceDate = trim((string)($_POST["attendance_date"] ?? $attendanceDate));
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $attendanceDate)) {
-            $attendanceDate = date("Y-m-d");
+            $attendanceDate = ($termId !== "" && $schoolYear !== "")
+                ? academic_period_resolve_term_start_date($schoolYear, $termId)
+                : date("Y-m-d");
         }
         $includeWeekends = true;
 
@@ -506,8 +518,11 @@ if (($_SERVER["REQUEST_METHOD"] ?? "GET") === "POST") {
                 : [[], [], false];
             $postSubjectOptions = attendance_subject_rows_for_sections(array_keys($postSections), $isTeacher, $postTHas, $postTCodes, $postTNames);
             $saveAttendanceSubjectId = attendance_normalize_subject_id($postSaveSubjectRaw, $postSubjectOptions);
-            if ($grade === "" || $sectionName === "" || $saveAttendanceSubjectId <= 0) {
-                throw new RuntimeException("Please select Grade, Section, and Attendance subject.");
+            if ($grade === "" || $sectionName === "") {
+                throw new RuntimeException("Please select Grade and Section.");
+            }
+            if ($postSaveSubjectRaw > 0 && $saveAttendanceSubjectId <= 0) {
+                throw new RuntimeException("Please select a valid attendance subject.");
             }
 
             $stmtUpAtt = $pdo->prepare(
@@ -933,6 +948,12 @@ ob_start();
   </div>
 </div>
 
+<?php if ($isTeacher && $teacherClassCount === 0): ?>
+  <div class="alert alert-info mb-3">
+    Your class list is empty. Add students on <a href="<?= htmlspecialchars(base_url("data-entry"), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" class="alert-link">Data Entry</a>
+    (encode a new student or check existing ones and use <strong>Add selected to my class</strong>). They will then appear here on Student Sheets.
+  </div>
+<?php endif; ?>
 <?php if ($flash): ?>
   <div class="alert alert-info"><?= htmlspecialchars((string)$flash, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
 <?php endif; ?>
@@ -1041,8 +1062,9 @@ ob_start();
         </div>
         <?php if (in_array($view, ["sheet", "grading"], true)): ?>
           <div class="dg-sheet-filter-field dg-sheet-filter-field--date">
-            <label class="form-label mb-1">Quarter start date</label>
+            <label class="form-label mb-1">Day 1 — first class day of period</label>
             <input class="form-control" type="date" name="attendance_date" value="<?= htmlspecialchars($attendanceDate, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" />
+            <div class="form-text small">Official start of this grading period — not when Drop Guard went online. Admins set defaults in Settings.</div>
           </div>
           <div class="dg-sheet-filter-field dg-sheet-filter-field--subject">
             <label class="form-label mb-1">Subject</label>
@@ -1063,7 +1085,7 @@ ob_start();
         </div>
       </div>
     </form>
-    <div class="form-text small mt-2">Choose <strong>grade level</strong> and <strong>section</strong> first, then <strong>grading period</strong>. School year, start date, and subject reload when changed.</div>
+    <div class="form-text small mt-2">Choose <strong>grade level</strong> and <strong>section</strong> first, then <strong>grading period</strong>. Day 1 follows the school calendar (Settings → Attendance Day 1 Dates).</div>
   </div>
 </div>
 
@@ -1077,6 +1099,7 @@ ob_start();
     const syEl = document.getElementById("dgSheetSchoolYear");
     const termEl = document.getElementById("dgSheetTermId");
     const attSubEl = document.getElementById("dgSheetAttendanceSubject");
+    const attDateEl = form.querySelector('input[name="attendance_date"]');
     if (!form || !gEl || !sEl) return;
 
     function termTrackForGrade(g) {
@@ -1192,6 +1215,9 @@ ob_start();
       if (typeof form.requestSubmit === "function") form.requestSubmit();
       else form.submit();
     }
+    function clearDay1ForPeriodChange() {
+      if (attDateEl) attDateEl.value = "";
+    }
     function onGradeChange() {
       syncGradeLevelOptions();
       syncStrandUi();
@@ -1211,7 +1237,10 @@ ob_start();
     sEl.addEventListener("change", onSectionChange);
     [syEl, termEl, attSubEl].forEach(function (el) {
       if (!el) return;
-      el.addEventListener("change", submitFilter);
+      el.addEventListener("change", function () {
+        if (el === syEl || el === termEl) clearDay1ForPeriodChange();
+        submitFilter();
+      });
     });
     syncGradeLevelOptions();
     syncStrandUi();
@@ -1233,6 +1262,15 @@ ob_start();
 <div class="dg-sheet-data-panel dg-flex-1">
 
 <?php if ($view === "sheet"): ?>
+  <?php if ($termId !== "" && $attendanceDate !== ""): ?>
+    <div class="alert alert-info mb-3">
+      <strong>Day 1</strong> is the first official class day of <?= htmlspecialchars(curriculum_term_label($termId), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?> (<?= htmlspecialchars($schoolYear, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>).
+      Column <strong>D1</strong> is that day — it is <em>not</em> the date Drop Guard was installed.
+      <?php if (!$attendanceDay1IsConfigured): ?>
+        The date shown is a system estimate; ask an admin to confirm it under <strong>Settings → Attendance Day 1 Dates</strong>.
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
   <?php
     $termDays = (int)($termMeta["default_total_days"] ?? curriculum_default_total_school_days_per_quarter());
     if ($termDays <= 0) {
@@ -1317,7 +1355,7 @@ ob_start();
           <div>
             <div class="h5 mb-0">Calendar Sheet</div>
             <div class="text-muted small">
-              <?= htmlspecialchars($attendanceDate, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?> • <?= (int)$termDays ?> school days
+              Day 1: <?= htmlspecialchars($attendanceDate, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?> • <?= (int)$termDays ?> school days
               • <?= htmlspecialchars($grade !== "" ? $grade : "All", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>
               <?php if ($strandFilter !== "" && curriculum_strand_filter_applies($grade !== "" ? $grade : null)): ?>
                 • <?= htmlspecialchars($strandFilter, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>
@@ -1365,13 +1403,13 @@ ob_start();
                   <tr>
                     <th style="min-width:240px">
                       <div class="fw-semibold">Student</div>
-                      <div class="text-muted small">Set status for this date</div>
+                      <div class="text-muted small">Mark Present, Late, or Absent per school day</div>
                     </th>
                     <?php foreach ($calendarDayMeta as $meta): ?>
-                      <th class="dg-sheet-day dg-sheet-calendar-day<?= $meta["is_weekend"] ? " dg-sheet-calendar-weekend" : "" ?>" title="<?= htmlspecialchars((string)$meta["date"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>">
-                        <div class="dg-cal-day-index">D<?= (int)$meta["idx"] ?></div>
-                        <div class="dg-cal-day-week"><?= htmlspecialchars((string)$meta["dow_short"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
-                        <div class="dg-cal-day-date"><?= htmlspecialchars((string)$meta["date_short"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
+                      <th class="dg-sheet-day dg-sheet-calendar-day<?= $meta["is_weekend"] ? " dg-sheet-calendar-weekend" : "" ?>" title="Calendar reference: <?= htmlspecialchars((string)$meta["date"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>">
+                        <div class="dg-cal-day-index fw-semibold">D<?= (int)$meta["idx"] ?></div>
+                        <div class="dg-cal-day-week text-muted small"><?= htmlspecialchars((string)$meta["dow_short"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
+                        <div class="dg-cal-day-date text-muted small"><?= htmlspecialchars((string)$meta["date_short"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></div>
                       </th>
                     <?php endforeach; ?>
                     <th class="text-end dg-sheet-summary-col" style="min-width:88px">Present</th>

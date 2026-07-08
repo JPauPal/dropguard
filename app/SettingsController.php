@@ -32,6 +32,7 @@ final class SettingsController
             "finish_semester" => self::handleFinishSemester($post, $user),
             "reopen_term" => self::handleReopenTerm($post, $user),
             "active_period" => self::handleActivePeriod($post, $user),
+            "term_start_dates" => self::handleTermStartDates($post, $user),
             "digest_settings" => self::handleDigestSettings($post, $user),
             default => self::handleSaveSettings($post, $user),
         };
@@ -278,6 +279,60 @@ final class SettingsController
         );
 
         return ["error" => null, "success" => "Active grading period updated."];
+    }
+
+    /**
+     * @param array<string, mixed> $post
+     * @param array<string, mixed> $user
+     * @return array{error: ?string, success: ?string}
+     */
+    private static function handleTermStartDates(array $post, array $user): array
+    {
+        $schoolYear = trim((string)($post["term_start_school_year"] ?? academic_period_active_school_year()));
+        if (!self::isValidSchoolYear($schoolYear)) {
+            return ["error" => "School year must be in YYYY-YYYY format.", "success" => null];
+        }
+
+        $datesIn = $post["term_start"] ?? [];
+        if (!is_array($datesIn)) {
+            $datesIn = [];
+        }
+
+        $previous = academic_period_term_start_dates_for_year($schoolYear);
+        $saved = 0;
+
+        try {
+            foreach ($datesIn as $termId => $dateRaw) {
+                $termId = trim((string)$termId);
+                $dateRaw = trim((string)$dateRaw);
+                if ($termId === "" || curriculum_term_meta($termId) === null) {
+                    continue;
+                }
+                if ($dateRaw === "") {
+                    continue;
+                }
+                academic_period_set_term_start_date($schoolYear, $termId, $dateRaw);
+                $saved++;
+            }
+        } catch (InvalidArgumentException $e) {
+            return ["error" => $e->getMessage(), "success" => null];
+        }
+
+        $newValue = academic_period_term_start_dates_for_year($schoolYear);
+        self::auditStateChange(
+            "UPDATE_TERM_START_DATES",
+            $user,
+            $previous,
+            $newValue,
+            "Updated attendance Day 1 dates for {$schoolYear}."
+        );
+
+        return [
+            "error" => null,
+            "success" => $saved > 0
+                ? "Attendance Day 1 dates saved for {$schoolYear}."
+                : "No dates were entered. Set at least one Day 1 date and save again.",
+        ];
     }
 
     /**

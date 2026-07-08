@@ -317,6 +317,24 @@ function ensure_student_sections(): void
     $done = true;
 }
 
+/** Resolve a section picker value or short label to the canonical sections.section_name. */
+function resolve_section_name(string $input): ?string
+{
+    $input = trim($input);
+    if ($input === "") {
+        return null;
+    }
+    foreach (list_sections(null) as $name) {
+        if ($name === $input) {
+            return $name;
+        }
+        if (strcasecmp(section_display_short($name), $input) === 0) {
+            return $name;
+        }
+    }
+    return null;
+}
+
 /** @return list<string> */
 function list_sections(?int $teacherUserId = null): array
 {

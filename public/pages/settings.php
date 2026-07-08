@@ -33,6 +33,7 @@ $transmutationEnabled = grading_transmutation_enabled();
 $periodStatus = academic_period_status_summary();
 $jhsTerms = curriculum_performance_terms("junior_high_school");
 $shsTerms = curriculum_performance_terms("senior_high_school");
+$termStartDates = academic_period_term_start_dates_for_year($periodStatus["school_year"]);
 $requiresEoyConfirm = ($periodStatus["jhs_end_of_school_year_semester"] ?? false)
     || ($periodStatus["shs_end_of_school_year_semester"] ?? false);
 $digestEnabled = digest_is_enabled();
@@ -216,6 +217,39 @@ ob_start();
       </div>
       <div class="col-md-3 d-flex align-items-end">
         <button class="btn btn-outline-dark w-100" type="submit">Update Active Period</button>
+      </div>
+    </form>
+
+    <form method="post" action="settings" class="row g-3 border rounded p-3 mb-4">
+      <?= csrf_field() ?>
+      <input type="hidden" name="form_type" value="term_start_dates" />
+      <div class="col-12">
+        <div class="fw-semibold">Attendance Day 1 Dates</div>
+        <div class="small text-muted">
+          Set the <strong>first official class day</strong> for each grading period. Teachers use this as Day 1 on Student Sheets — it is <strong>not</strong> the date Drop Guard was installed or went online.
+          Leave a field blank to keep using the system estimate until you save a date.
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">School year</label>
+        <input class="form-control" type="text" name="term_start_school_year" pattern="^\d{4}-\d{4}$" title="Format: YYYY-YYYY" value="<?= htmlspecialchars($periodStatus["school_year"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>" required />
+      </div>
+      <?php foreach ($termStartDates as $termId => $termStart): ?>
+        <div class="col-md-3">
+          <label class="form-label"><?= htmlspecialchars((string)$termStart["label"], ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?></label>
+          <input
+            class="form-control"
+            type="date"
+            name="term_start[<?= htmlspecialchars($termId, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>]"
+            value="<?= htmlspecialchars((string)($termStart["configured"] ?? $termStart["effective"]), ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8") ?>"
+          />
+          <?php if ($termStart["configured"] === null): ?>
+            <div class="small text-muted">Estimated until saved</div>
+          <?php endif; ?>
+        </div>
+      <?php endforeach; ?>
+      <div class="col-12">
+        <button class="btn btn-outline-dark" type="submit">Save Day 1 Dates</button>
       </div>
     </form>
 
